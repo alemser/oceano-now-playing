@@ -181,8 +181,14 @@ def main():
                             logger.info(f"Nova música: {new_data.get('title')} - {new_data.get('artist')}")
                         
                         last_state = new_data
-                        if last_state.get('status') == 'play':
-                            last_active_time = time.time()
+                        
+                        # Reset standby timer on ANY activity from Volumio (play, pause, skip, etc)
+                        last_active_time = time.time()
+                        
+                        # Wake up if we were sleeping and activity is detected
+                        if is_sleeping:
+                            logger.info("Atividade detectada, saindo do modo standby...")
+                            is_sleeping = False
                         
                         render_ui(last_state)
                     elif result == '2': # Heartbeat do socket.io
@@ -204,10 +210,6 @@ def main():
                         is_sleeping = True
                     continue
                 
-                if is_sleeping and last_state.get('status') == 'play':
-                    logger.info("Saindo do modo standby...")
-                    is_sleeping = False
-
                 # Alternância automática Texto (30s) -> Capa
                 if not show_capa_mode and (now - last_cycle_time > CYCLE_TIME) and last_state.get('status') == 'play':
                     logger.info("Alternando para modo capa...")
