@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# SPI Now Playing - Installation Script for Raspberry Pi 5
+set -e
+
+echo "--- Installing SPI Now Playing ---"
+
+# 1. Update and Install System Dependencies
+echo "Installing system dependencies..."
+sudo apt-get update
+sudo apt-get install -y python3-pip python3-venv python3-numpy python3-pil fonts-dejavu-core
+
+# 2. Setup Virtual Environment
+echo "Setting up virtual environment..."
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 3. Setup Systemd Service
+echo "Creating systemd service..."
+SERVICE_PATH="/etc/systemd/system/spi-now-playing.service"
+WORKING_DIR=$(pwd)
+USER_NAME=$(whoami)
+
+cat <<EOF | sudo tee $SERVICE_PATH
+[Unit]
+Description=SPI Now Playing Display for Volumio
+After=network.target volumio.service
+
+[Service]
+ExecStart=${WORKING_DIR}/venv/bin/python ${WORKING_DIR}/src/spi-now-playing.py
+WorkingDirectory=${WORKING_DIR}
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=${USER_NAME}
+Group=video
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 4. Finalize and Start Service
+echo "Reloading systemd and starting service..."
+sudo systemctl daemon-reload
+sudo systemctl enable spi-now-playing.service
+sudo systemctl start spi-now-playing.service
+
+echo "--- Installation Complete! ---"
+echo "You can check the service status with: sudo systemctl status spi-now-playing.service"
+echo "Or view logs with: journalctl -u spi-now-playing.service -f"

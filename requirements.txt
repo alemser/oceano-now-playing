@@ -1,0 +1,10 @@
+# Image processing and hardware interaction
+Pillow
+numpy
+spidev
+gpiozero
+RPi.GPIO
+
+# Volumio Communication
+requests
+websocket-client
