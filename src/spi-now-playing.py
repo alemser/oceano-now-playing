@@ -51,6 +51,11 @@ def states_are_equal(s1, s2):
 
 def signal_handler(sig, frame):
     logger.info("Exiting application...")
+    # Re-enable the cursor on exit
+    try:
+        os.system("sudo sh -c 'setterm -cursor on > /dev/tty1'")
+    except:
+        pass
     if renderer:
         # During shutdown, do not use fsync to avoid long blocks
         renderer.clear(use_fsync=False)
@@ -70,6 +75,12 @@ def main():
     # Initialize modules
     renderer = Renderer(WIDTH, HEIGHT, FB_DEVICE, COLOR_FORMAT)
     volumio = VolumioClient(VOLUMIO_URL)
+    
+    # Disable the blinking cursor on the framebuffer console
+    try:
+        os.system("sudo sh -c 'setterm -cursor off > /dev/tty1'")
+    except:
+        pass
     
     # Initialize inactivity timer
     last_active_time = time.time()
