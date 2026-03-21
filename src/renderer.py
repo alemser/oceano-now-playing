@@ -5,7 +5,7 @@ import logging
 from io import BytesIO
 import numpy as np
 import requests
-from PIL import Image, ImageDraw, ImageFont, ImageStat, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageStat
 
 logger = logging.getLogger(__name__)
 
@@ -208,9 +208,8 @@ class Renderer:
             logger.info("Framebuffer handle was closed, re-opening.")
             self._open_fb()
 
-        try:
-            img = Image.new('RGB', (self.width, self.height), color=(0, 0, 0))
-            draw = ImageDraw.Draw(img)
+        img = Image.new('RGB', (self.width, self.height), color=(0, 0, 0))
+        draw = ImageDraw.Draw(img)
 
         # Fonts
         f_xl = self.get_font(42, bold=True)
@@ -279,44 +278,14 @@ class Renderer:
                 draw.text(((self.width - qw) // 2, box_y + 3), quality_str, fill=accent_color, font=f_tech)
 
         else:
-            # --- MODE 2: COVER WITH BLURRED BACKGROUND ---
+            # --- MODE 2: COVER (CENTERED) ---
             if art:
-                try:
-                    # Create blurred background from the artwork
-                    # Scale up the art and blur it to fill the screen
-                    blur_art = art.resize((self.width * 2, self.height * 2), Image.Resampling.LANCZOS)
-                    blur_art = blur_art.filter(ImageFilter.GaussianBlur(radius=40))
-                    # Crop to center
-                    blur_art = blur_art.crop(
-                        ((blur_art.width - self.width) // 2, (blur_art.height - self.height) // 2,
-                         (blur_art.width + self.width) // 2, (blur_art.height + self.height) // 2)
-                    )
-                    # Darken the blur background for better contrast
-                    blur_array = np.array(blur_art).astype(float)
-                    blur_array *= 0.5
-                    blur_art = Image.fromarray(np.uint8(blur_array))
-                    img.paste(blur_art, (0, 0))
-                    
-                    # Center the album cover
-                    art_x = (self.width - self.art_size) // 2
-                    art_y = (self.height - self.art_size) // 2 - 10  # Slight upward offset for progress bar
-                    img.paste(art, (art_x, art_y))
-                except Exception as e:
-                    logger.error(f"Error rendering artwork background: {e}")
-                    # Fallback: just show centered art without blur
-                    art_x = (self.width - self.art_size) // 2
-                    art_y = (self.height - self.art_size) // 2 - 10
-                    img.paste(art, (art_x, art_y))
+                # Center the album cover
+                art_x = (self.width - self.art_size) // 2
+                art_y = (self.height - self.art_size) // 2 - 10  # Slight upward offset for progress bar
+                img.paste(art, (art_x, art_y))
 
-            self._write_to_fb(img)
-        except Exception as e:
-            logger.error(f"Error in render function: {e}", exc_info=True)
-            # Try to write a black screen as fallback
-            try:
-                img = Image.new('RGB', (self.width, self.height), color=(0, 0, 0))
-                self._write_to_fb(img)
-            except:
-                pass
+        self._write_to_fb(img)
 
     def clear_art_cache(self):
         """Clears the album art cache."""
