@@ -136,6 +136,25 @@ class Renderer:
         m, s = divmod(int(seconds), 60)
         return f"{m:02d}:{s:02d}"
 
+    def _draw_centered_text(self, draw, text, y, font, fill, max_width=440):
+        """Draws text centered on the screen, scaling font down if it overflows."""
+        # Try to fit the text by reducing font size if necessary
+        current_font = font
+        font_size = getattr(font, 'size', 24)
+        
+        while font_size > 12:
+            bbox = draw.textbbox((0, 0), text, font=current_font)
+            w = bbox[2] - bbox[0]
+            if w <= max_width:
+                break
+            font_size -= 2
+            current_font = self.get_font(font_size, bold=True if font_size > 20 else False)
+            
+        bbox = draw.textbbox((0, 0), text, font=current_font)
+        w = bbox[2] - bbox[0]
+        draw.text(((self.width - w) // 2, y), text, fill=fill, font=current_font)
+        return y + (bbox[3] - bbox[1]) + 10
+
     def render(self, data, show_capa_mode=False):
         """Renders the complete V2 interface."""
         if not data:
@@ -192,31 +211,27 @@ class Renderer:
 
         if not show_capa_mode:
             # --- MODE 1: CENTERED TEXT ---
-            y_cursor = 40
+            y_cursor = 35
             
-            # Title
-            lines = textwrap.wrap(title, width=20)
-            for line in lines[:2]:
-                lw, lh = draw.textbbox((0, 0), line, font=f_xl)[2:]
-                draw.text(((self.width - lw) // 2, y_cursor), line, fill=(255, 255, 255), font=f_xl)
-                y_cursor += 55
+            # Title (wrapped if needed, then centered)
+            title_lines = textwrap.wrap(title, width=25)
+            for line in title_lines[:2]:
+                y_cursor = self._draw_centered_text(draw, line, y_cursor, f_xl, (255, 255, 255))
             
-            y_cursor += 10
+            y_cursor += 5
             # Artist
-            lw, lh = draw.textbbox((0, 0), artist, font=f_large)[2:]
-            draw.text(((self.width - lw) // 2, y_cursor), artist[:30], fill=(200, 200, 200), font=f_large)
-            y_cursor += 45
+            y_cursor = self._draw_centered_text(draw, artist[:40], y_cursor, f_large, (200, 200, 200))
             
             # Album
-            lw, lh = draw.textbbox((0, 0), album, font=f_med)[2:]
-            draw.text(((self.width - lw) // 2, y_cursor), album[:35], fill=(120, 120, 120), font=f_med)
+            y_cursor = self._draw_centered_text(draw, album[:45], y_cursor, f_med, (120, 120, 120))
             
             # Tech Info at bottom center
             quality_str = f"{samplerate} | {bitdepth}" if samplerate and bitdepth else samplerate or bitdepth
             if quality_str:
                 qw, qh = draw.textbbox((0, 0), quality_str, font=f_tech)[2:]
-                draw.rectangle(((self.width - qw) // 2 - 10, pb_y - 45, (self.width + qw) // 2 + 10, pb_y - 15), outline=accent_color, width=2)
-                draw.text(((self.width - qw) // 2, pb_y - 42), quality_str, fill=accent_color, font=f_tech)
+                box_y = pb_y - 50
+                draw.rectangle(((self.width - qw) // 2 - 10, box_y, (self.width + qw) // 2 + 10, box_y + 30), outline=accent_color, width=2)
+                draw.text(((self.width - qw) // 2, box_y + 3), quality_str, fill=accent_color, font=f_tech)
 
         else:
             # --- MODE 2: COVER + ENHANCED TECH ---

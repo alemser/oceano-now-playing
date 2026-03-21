@@ -28,6 +28,8 @@ last_active_time = time.time()
 last_cycle_time = time.time()
 last_sync_time = 0
 last_render_time = 0
+last_volumio_timestamp = 0 # Local timestamp when pushState was received
+last_volumio_seek = 0      # Seek value from Volumio at that timestamp
 show_capa_mode = False
 is_sleeping = False
 
@@ -60,7 +62,7 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 def main():
-    global last_state, last_rendered_state, last_active_time, last_cycle_time, last_sync_time, last_render_time, show_capa_mode, is_sleeping, renderer, volumio
+    global last_state, last_rendered_state, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_volumio_timestamp, last_volumio_seek, show_capa_mode, is_sleeping, renderer, volumio
     
     logger.info("SPI Now Playing - Starting...")
     
@@ -101,6 +103,10 @@ def main():
                         last_cycle_time = now
                         logger.info(f"New song detected: {new_data.get('title')} - {new_data.get('artist')}")
                     
+                    # Store data for local seek interpolation
+                    last_volumio_seek = new_data.get('seek', 0)
+                    last_volumio_timestamp = now
+                    
                     # Reset standby timer on ANY state change message
                     last_active_time = now
                     
@@ -114,7 +120,7 @@ def main():
                 
                 # Handle rendering
                 if last_state and not is_sleeping:
-                    # Render immediately if state changed
+                    # Render immediately if state changed (excluding seek)
                     if not states_are_equal(last_state, last_rendered_state):
                         renderer.render(last_state, show_capa_mode)
                         last_rendered_state = last_state.copy()
@@ -122,10 +128,14 @@ def main():
                     
                     # Update progress bar every 1s while playing
                     elif last_state.get('status') == 'play' and (now - last_render_time >= 1.0):
-                        # Increment local seek for smoother bar
-                        # Volumio gives us 'seek' in ms at the time pushState was sent.
-                        # We don't have a perfect local timer, so we'll just re-render.
-                        renderer.render(last_state, show_capa_mode)
+                        # Interpolate seek time locally for smoothness
+                        current_seek = last_volumio_seek + int((now - last_volumio_timestamp) * 1000)
+                        
+                        # Create a copy of the state with the interpolated seek
+                        render_data = last_state.copy()
+                        render_data['seek'] = current_seek
+                        
+                        renderer.render(render_data, show_capa_mode)
                         last_render_time = now
                 
                 # Standby and mode switching
