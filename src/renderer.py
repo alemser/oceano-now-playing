@@ -22,12 +22,19 @@ class Renderer:
         self._open_fb()
 
     def _open_fb(self):
-        """Abre o framebuffer de forma persistente."""
+        """Abre o framebuffer de forma persistente e detecta seu tamanho real."""
         if os.path.exists(self.fb_device):
             try:
                 # Tenta garantir permissões
                 os.system(f"sudo chmod 666 {self.fb_device}")
-                self.fb_handle = open(self.fb_device, "wb")
+                self.fb_handle = open(self.fb_device, "r+b") # Abre para leitura e escrita
+                
+                # Detecta o tamanho real do framebuffer
+                self.fb_handle.seek(0, os.SEEK_END)
+                self.real_fb_size = self.fb_handle.tell()
+                self.fb_handle.seek(0)
+                
+                logger.info(f"Framebuffer {self.fb_device} aberto. Tamanho detectado: {self.real_fb_size} bytes.")
             except Exception as e:
                 logger.error(f"Não foi possível abrir o framebuffer {self.fb_device}: {e}")
         else:
@@ -46,29 +53,20 @@ class Renderer:
         return (b << 11 | g << 5 | r).tobytes()
 
     def clear(self):
-        """Limpa o framebuffer de forma robusta, preenchendo todo o dispositivo com zeros."""
+        """Limpa o framebuffer preenchendo todo o dispositivo com zeros."""
         try:
             if not self.fb_handle:
                 self._open_fb()
             
             if self.fb_handle:
                 self.fb_handle.seek(0)
-                # Tenta escrever um buffer maior que o esperado para garantir que limpamos tudo
-                # O driver do framebuffer impedirá de escrever além do final do arquivo
-                # Para 480x320 BGR565, isso é 307200 bytes. Vamos tentar escrever um pouco mais.
-                total_bytes = (self.width * (self.height + 2)) * 2
-                black_buffer = b'\x00' * total_bytes
-                
-                try:
-                    self.fb_handle.write(black_buffer)
-                except OSError:
-                    # O erro de escrita ao atingir o final do dispositivo é esperado aqui
-                    pass
-                
+                # Cria um buffer de zeros do tamanho REAL do dispositivo para garantir limpeza total
+                black_buffer = b'\x00' * self.real_fb_size
+                self.fb_handle.write(black_buffer)
                 self.fb_handle.flush()
                 os.fsync(self.fb_handle.fileno())
         except Exception as e:
-            logger.error(f"Erro ao limpar framebuffer de forma robusta: {e}")
+            logger.error(f"Erro ao limpar framebuffer: {e}")
             self.fb_handle = None
 
     def _write_to_fb(self, img):
