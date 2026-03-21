@@ -8,7 +8,7 @@ echo "--- Installing SPI Now Playing ---"
 # 1. Update and Install System Dependencies
 echo "Installing system dependencies..."
 sudo apt-get update
-sudo apt-get install -y python3-pip python3-venv python3-numpy python3-pil fonts-dejavu-core
+sudo apt-get install -y python3-pip python3-venv python3-numpy python3-pil fonts-dejavu-core libopenblas-dev libatlas-base-dev
 
 # 2. Setup Virtual Environment
 echo "Setting up virtual environment..."
