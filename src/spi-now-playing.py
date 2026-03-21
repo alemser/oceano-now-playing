@@ -185,6 +185,9 @@ def main():
                     # Reset mode to text and restart cycle timer on resumption
                     show_capa_mode = False
                     last_cycle_time = now
+                    # Force re-render after waking up
+                    last_rendered_state = None
+                    last_rendered_mode = None
                 
                 last_active_time = now
                 
