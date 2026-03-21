@@ -18,13 +18,14 @@ logger = logging.getLogger(__name__)
 
 # --- CONFIGURAÇÕES ---
 WIDTH, HEIGHT = 480, 320
-FB_DEVICE = "/dev/fb0"
-VOLUMIO_URL = "ws://localhost:3000/socket.io/?EIO=3&transport=websocket"
+FB_DEVICE = os.getenv("FB_DEVICE", "/dev/fb0")
+VOLUMIO_URL = os.getenv("VOLUMIO_URL", "ws://localhost:3000/socket.io/?EIO=3&transport=websocket")
 
 ART_SIZE = 320
 ART_X, ART_Y = 10, 0
 CYCLE_TIME = 30
-STANDBY_TIMEOUT = 300
+# Standby time in seconds (default: 600 = 10 minutes)
+STANDBY_TIMEOUT = int(os.getenv("STANDBY_TIMEOUT", 600))
 
 # Estado Global
 last_state = None

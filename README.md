@@ -58,6 +58,16 @@ This will:
 - Install all Python libraries from `requirements.txt`.
 - Create, enable, and start a systemd service (`spi-now-playing.service`).
 
+## Configuration
+
+You can customize the behavior by editing the constants at the top of `src/spi-now-playing.py` or by setting environment variables in the service file.
+
+- **STANDBY_TIMEOUT**: Time in seconds of inactivity before the screen goes black (default: `600` = 10 minutes).
+- **CYCLE_TIME**: Time in seconds to switch from Text Mode to Album Art Mode (default: `30` seconds).
+- **FB_DEVICE**: Framebuffer device path (default: `/dev/fb0`).
+
+To change these via the service, edit `/etc/systemd/system/spi-now-playing.service` and add `Environment="STANDBY_TIMEOUT=600"` under the `[Service]` section.
+
 ## Service Management
 
 The program runs automatically on startup. Use these commands to manage it:
