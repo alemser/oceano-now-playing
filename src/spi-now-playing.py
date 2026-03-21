@@ -24,14 +24,15 @@ STANDBY_TIMEOUT = int(os.getenv("STANDBY_TIMEOUT", 600))
 # Global State
 last_state = None
 last_rendered_state = None
+last_rendered_mode = None # Tracks if last render was cover or text
 last_active_time = time.time()
 last_cycle_time = time.time()
 last_sync_time = 0
 last_render_time = 0
 last_volumio_timestamp = 0 # Local timestamp when pushState was received
 last_volumio_seek = 0      # Seek value from Volumio at that timestamp
-show_capa_mode = False
 is_sleeping = False
+is_showing_idle = False    # Tracks if idle screen is currently displayed
 
 # Global objects
 renderer = None
@@ -62,7 +63,7 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 def main():
-    global last_state, last_rendered_state, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_volumio_timestamp, last_volumio_seek, show_capa_mode, is_sleeping, renderer, volumio
+    global last_state, last_rendered_state, last_rendered_mode, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_volumio_timestamp, last_volumio_seek, is_sleeping, is_showing_idle, renderer, volumio
     
     logger.info("SPI Now Playing - Starting...")
     
@@ -75,7 +76,10 @@ def main():
     
     # Show the idle screen logo instead of just clearing
     renderer.render_idle_screen()
+    is_showing_idle = True
     logger.info("Startup screen displayed.")
+
+    show_capa_mode = False
 
     while True:
         try:
@@ -97,7 +101,6 @@ def main():
                     last_sync_time = now
                 
                 # Receive messages
-                # We use a shorter timeout for more frequent progress bar updates
                 new_data = volumio.receive_message(timeout=0.5)
                 
                 if new_data:
@@ -114,66 +117,78 @@ def main():
                     # Reset standby timer on ANY state change message
                     last_active_time = now
                     
-                    # Wake up if we were sleeping
-                    if is_sleeping:
-                        logger.info("Activity detected, exiting standby mode...")
+                    # Wake up if we were sleeping or showing idle
+                    if is_sleeping or is_showing_idle:
+                        logger.info("Activity detected, waking up display...")
                         is_sleeping = False
+                        is_showing_idle = False
                     
-                    # Update state
                     last_state = new_data
                 
-                # Handle rendering
-                if last_state and not is_sleeping:
-                    # Render immediately if state changed (excluding seek)
-                    if not states_are_equal(last_state, last_rendered_state):
-                        renderer.render(last_state, show_capa_mode)
-                        last_rendered_state = last_state.copy()
-                        last_render_time = now
-                    
-                    # Update progress bar every 1s while playing
-                    elif last_state.get('status') == 'play' and (now - last_render_time >= 1.0):
-                        # Interpolate seek time locally for smoothness
-                        current_seek = last_volumio_seek + int((now - last_volumio_timestamp) * 1000)
-                        
-                        # Create a copy of the state with the interpolated seek
-                        render_data = last_state.copy()
-                        render_data['seek'] = current_seek
-                        
-                        renderer.render(render_data, show_capa_mode)
-                        last_render_time = now
-                
-                # Standby and mode switching
                 if not last_state:
                     continue
-                
-                # Show idle screen if stopped
-                if last_state.get('status') == 'stop':
-                    if not is_sleeping:
-                        renderer.render_idle_screen()
-                        # We don't set is_sleeping to True here as it's just 'stopped'
-                    continue
 
-                # Standby (Turn off screen if inactive for too long)
+                # --- HANDLE IDLE/STANDBY STATES ---
+                
+                # If stopped, show idle screen (only once)
+                if last_state.get('status') == 'stop':
+                    if not is_showing_idle:
+                        logger.info("Player stopped. Showing idle screen.")
+                        renderer.render_idle_screen()
+                        is_showing_idle = True
+                    continue # Skip music rendering
+                
+                # Standby logic (if paused for too long)
                 if last_state.get('status') == 'play':
                     last_active_time = now
                     is_sleeping = False
+                    is_showing_idle = False
                 
                 if last_state.get('status') != 'play' and (now - last_active_time > STANDBY_TIMEOUT):
                     if not is_sleeping:
-                        logger.info(f"Inactive for {STANDBY_TIMEOUT}s. Entering standby...")
+                        logger.info(f"Inactive for {STANDBY_TIMEOUT}s. Entering standby.")
                         renderer.clear()
                         is_sleeping = True
                     continue
                 
-                # Automatic mode switching: alternating between Text and Cover every CYCLE_TIME
+                # If we get here, we are either playing or paused (but not yet sleeping)
+                
+                # --- HANDLE MUSIC RENDERING ---
+                
+                # Automatic mode switching while playing
                 if last_state.get('status') == 'play':
                     if now - last_cycle_time > CYCLE_TIME:
                         show_capa_mode = not show_capa_mode
                         last_cycle_time = now
                         logger.info(f"Switching to {'cover' if show_capa_mode else 'text'} mode...")
-                        renderer.render(last_state, show_capa_mode)
-                        last_rendered_state = last_state.copy()
-                        last_render_time = now
+
+                # Determine if we need to re-render
+                state_changed = not states_are_equal(last_state, last_rendered_state)
+                mode_changed = show_capa_mode != last_rendered_mode
+                time_to_update_progress = (last_state.get('status') == 'play' and now - last_render_time >= 1.0)
+
+                if state_changed or mode_changed or time_to_update_progress:
+                    # Interpolate seek time
+                    current_seek = last_volumio_seek
+                    if last_state.get('status') == 'play':
+                        current_seek += int((now - last_volumio_timestamp) * 1000)
+                    
+                    render_data = last_state.copy()
+                    render_data['seek'] = current_seek
+                    
+                    renderer.render(render_data, show_capa_mode)
+                    
+                    last_rendered_state = last_state.copy()
+                    last_rendered_mode = show_capa_mode
+                    last_render_time = now
+                    is_showing_idle = False
+                    is_sleeping = False
+
+        except Exception as e:
+            logger.error(f"Error in connection/main loop: {e}")
+            if volumio:
+                volumio.close()
+            time.sleep(5)
 
         except Exception as e:
             logger.error(f"Error in connection/main loop: {e}")
