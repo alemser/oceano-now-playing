@@ -188,6 +188,7 @@ def main():
                     # Force re-render after waking up
                     last_rendered_state = None
                     last_rendered_mode = None
+                    logger.info("Reset last_rendered_state and last_rendered_mode to force re-render after resume.")
                 
                 last_active_time = now
                 

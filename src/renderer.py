@@ -200,8 +200,15 @@ class Renderer:
 
     def render(self, data, show_capa_mode=False):
         """Renders the complete V2 interface."""
+        logger.info(f"Renderer.render called: show_capa_mode={show_capa_mode}, data status={data.get('status') if data else None}")
         if not data:
+            logger.warning("Renderer.render called with no data!")
             return
+
+        # Ensure framebuffer is open
+        if not self.fb_handle:
+            logger.info("Framebuffer handle was closed, re-opening.")
+            self._open_fb()
 
         img = Image.new('RGB', (self.width, self.height), color=(0, 0, 0))
         draw = ImageDraw.Draw(img)
