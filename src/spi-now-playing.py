@@ -130,12 +130,14 @@ def main():
                         is_sleeping = True
                     continue
                 
-                # Automatic switch: Text (30s) -> Cover
-                if not show_capa_mode and (now - last_cycle_time > CYCLE_TIME) and last_state.get('status') == 'play':
-                    logger.info("Switching to cover mode...")
-                    show_capa_mode = True
-                    renderer.render(last_state, show_capa_mode)
-                    last_rendered_state = last_state.copy()
+                # Automatic mode switching: alternating between Text and Cover every CYCLE_TIME
+                if last_state and last_state.get('status') == 'play':
+                    if now - last_cycle_time > CYCLE_TIME:
+                        show_capa_mode = not show_capa_mode
+                        last_cycle_time = now
+                        logger.info(f"Switching to {'cover' if show_capa_mode else 'text'} mode...")
+                        renderer.render(last_state, show_capa_mode)
+                        last_rendered_state = last_state.copy()
 
         except Exception as e:
             logger.error(f"Error in connection/main loop: {e}")
