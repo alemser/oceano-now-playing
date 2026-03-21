@@ -31,17 +31,21 @@ USER_NAME=$(whoami)
 cat <<EOF | sudo tee $SERVICE_PATH
 [Unit]
 Description=SPI Now Playing Display for Volumio
-After=network.target volumio.service
+After=network-online.target volumio.service
+Wants=network-online.target
 
 [Service]
 ExecStart=${WORKING_DIR}/venv/bin/python ${WORKING_DIR}/src/spi-now-playing.py
 WorkingDirectory=${WORKING_DIR}
-StandardOutput=inherit
-StandardError=inherit
+StandardOutput=journal
+StandardError=journal
 Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
 TimeoutStopSec=15
 User=${USER_NAME}
 Group=video
+SupplementaryGroups=video
 
 [Install]
 WantedBy=multi-user.target
