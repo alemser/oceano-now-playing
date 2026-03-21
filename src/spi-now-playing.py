@@ -73,7 +73,9 @@ def main():
     # Initialize inactivity timer
     last_active_time = time.time()
     
+    # Clear the screen and draw a "Starting" message or just clear it
     renderer.clear()
+    logger.info("Initial screen cleared.")
 
     while True:
         try:
@@ -81,7 +83,9 @@ def main():
             if not volumio.connect():
                 time.sleep(5)
                 continue
-                
+            
+            # Immediately request state to force a render
+            volumio.get_state()
             last_sync_time = time.time()
             
             while True:
