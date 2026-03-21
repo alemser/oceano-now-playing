@@ -53,7 +53,7 @@ def disable_cursor():
     """Disables the blinking cursor on the framebuffer console."""
     for tty in ['tty0', 'tty1', 'tty2']:
         try:
-            os.system(f"sudo sh -c 'setterm -cursor off > /dev/{tty}' 2>/dev/null || true")
+            os.system(f"setterm -cursor off > /dev/{tty} 2>/dev/null || true")
         except:
             pass
 
@@ -61,7 +61,7 @@ def enable_cursor():
     """Re-enables the cursor on exit."""
     for tty in ['tty0', 'tty1', 'tty2']:
         try:
-            os.system(f"sudo sh -c 'setterm -cursor on > /dev/{tty}' 2>/dev/null || true")
+            os.system(f"setterm -cursor on > /dev/{tty} 2>/dev/null || true")
         except:
             pass
 
