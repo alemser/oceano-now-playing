@@ -15,40 +15,40 @@ class Renderer:
         self.fb_device = fb_device
         self.color_format = color_format.upper()
         self.fb_handle = None
-        self.art_cache = {}  # Cache para imagens redimensionadas
+        self.art_cache = {}  # Cache for resized images
         self.art_size = 320
         self.art_x, self.art_y = 10, 0
         
-        # Tenta abrir o framebuffer uma única vez
+        # Try to open the framebuffer once
         self._open_fb()
 
     def _open_fb(self):
-        """Abre o framebuffer de forma persistente e detecta seu tamanho real."""
+        """Opens the framebuffer persistently and detects its real size."""
         if os.path.exists(self.fb_device):
             try:
-                # Tenta garantir permissões
+                # Try to ensure permissions
                 os.system(f"sudo chmod 666 {self.fb_device}")
-                self.fb_handle = open(self.fb_device, "r+b") # Abre para leitura e escrita
+                self.fb_handle = open(self.fb_device, "r+b") # Open for read and write
                 
-                # Detecta o tamanho real do framebuffer
+                # Detect the real size of the framebuffer
                 self.fb_handle.seek(0, os.SEEK_END)
                 self.real_fb_size = self.fb_handle.tell()
                 self.fb_handle.seek(0)
                 
-                logger.info(f"Framebuffer {self.fb_device} aberto. Tamanho detectado: {self.real_fb_size} bytes. Formato: {self.color_format}")
+                logger.info(f"Framebuffer {self.fb_device} opened. Detected size: {self.real_fb_size} bytes. Format: {self.color_format}")
             except Exception as e:
-                logger.error(f"Não foi possível abrir o framebuffer {self.fb_device}: {e}")
+                logger.error(f"Could not open framebuffer {self.fb_device}: {e}")
         else:
-            logger.error(f"Dispositivo de framebuffer {self.fb_device} não encontrado.")
+            logger.error(f"Framebuffer device {self.fb_device} not found.")
 
     def close(self):
-        """Fecha o handle do framebuffer."""
+        """Closes the framebuffer handle."""
         if self.fb_handle:
             self.fb_handle.close()
             self.fb_handle = None
 
     def _rgb888_to_565(self, img):
-        """Converte RGB888 para 565 de acordo com o formato (RGB ou BGR)."""
+        """Converts RGB888 to 565 according to format (RGB or BGR)."""
         img_array = np.array(img).astype(np.uint16)
         r, g, b = (img_array[:,:,0] >> 3), (img_array[:,:,1] >> 2), (img_array[:,:,2] >> 3)
         
@@ -56,18 +56,18 @@ class Renderer:
             # B (bits 11-15), G (bits 5-10), R (bits 0-4)
             return (b << 11 | g << 5 | r).tobytes()
         else:
-            # Padrão: RGB565 - R (bits 11-15), G (bits 5-10), B (bits 0-4)
+            # Default: RGB565 - R (bits 11-15), G (bits 5-10), B (bits 0-4)
             return (r << 11 | g << 5 | b).tobytes()
 
     def clear(self, use_fsync=True):
-        """Limpa o framebuffer preenchendo todo o dispositivo com zeros."""
+        """Clears the framebuffer by filling the entire device with zeros."""
         try:
             if not self.fb_handle:
                 self._open_fb()
             
             if self.fb_handle:
                 self.fb_handle.seek(0)
-                # Cria um buffer de zeros do tamanho REAL do dispositivo para garantir limpeza total
+                # Create a zero buffer of the REAL size of the device to ensure full clearing
                 black_buffer = b'\x00' * self.real_fb_size
                 self.fb_handle.write(black_buffer)
                 self.fb_handle.flush()
@@ -75,13 +75,13 @@ class Renderer:
                     try:
                         os.fsync(self.fb_handle.fileno())
                     except OSError:
-                        pass # Alguns dispositivos não suportam fsync
+                        pass # Some devices do not support fsync
         except Exception as e:
-            logger.error(f"Erro ao limpar framebuffer: {e}")
+            logger.error(f"Error clearing framebuffer: {e}")
             self.fb_handle = None
 
     def _write_to_fb(self, img):
-        """Escreve a imagem no framebuffer da forma mais direta possível."""
+        """Writes the image to the framebuffer as directly as possible."""
         if not self.fb_handle:
             self._open_fb()
         
@@ -90,24 +90,24 @@ class Renderer:
                 raw = self._rgb888_to_565(img)
                 self.fb_handle.seek(0)
                 
-                # Escrevemos exatamente a quantidade de bytes da imagem (WIDTH * HEIGHT * 2)
-                # sem tentar preencher o dispositivo inteiro para evitar desalinhamentos
+                # Write exactly the number of bytes for the image (WIDTH * HEIGHT * 2)
+                # without trying to fill the entire device to avoid misalignment
                 img_bytes = self.width * self.height * 2
                 self.fb_handle.write(raw[:img_bytes])
                 
                 self.fb_handle.flush()
-                # Opcional: fsync pode causar lentidão em alguns drivers SPI
-                # mas ajuda a evitar 'tearing'
+                # Optional: fsync can cause slowness on some SPI drivers
+                # but helps avoid 'tearing'
                 try:
                     os.fsync(self.fb_handle.fileno())
                 except:
                     pass
             except Exception as e:
-                logger.error(f"Erro ao escrever no framebuffer: {e}")
+                logger.error(f"Error writing to framebuffer: {e}")
                 self.fb_handle = None
 
     def get_font(self, size, bold=False):
-        """Tenta carregar fontes comuns ou retorna a padrão."""
+        """Tries to load common fonts or returns the default."""
         font_paths = [
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf" if bold else "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
@@ -119,7 +119,7 @@ class Renderer:
         return ImageFont.load_default()
 
     def render(self, data, show_capa_mode=False):
-        """Renderiza a interface completa."""
+        """Renders the complete interface."""
         if not data:
             return
 
@@ -138,7 +138,7 @@ class Renderer:
         albumart = data.get('albumart', '')
 
         if not show_capa_mode:
-            # --- MODO 1: TEXTO ---
+            # --- MODE 1: TEXT ---
             margin_left = 20
             y_cursor = 30
             lines = textwrap.wrap(title, width=22)
@@ -157,7 +157,7 @@ class Renderer:
             quality_str = f"{samplerate} | {bitdepth}" if samplerate and bitdepth else samplerate or bitdepth
             draw.text((margin_left, y_cursor), quality_str, fill=(150, 150, 150), font=f_tech)
         else:
-            # --- MODO 2: CAPA ---
+            # --- MODE 2: COVER ---
             if albumart:
                 art = self._get_cached_art(albumart)
                 if art:
@@ -172,12 +172,12 @@ class Renderer:
         self._write_to_fb(img)
 
     def _get_cached_art(self, art_url):
-        """Busca e redimensiona a capa, com cache."""
+        """Fetches and resizes the cover art, with caching."""
         if art_url in self.art_cache:
             return self.art_cache[art_url]
 
         try:
-            # Limpa o cache se ficar muito grande (mais de 10 capas)
+            # Clear cache if it gets too large (more than 10 covers)
             if len(self.art_cache) > 10:
                 self.art_cache.clear()
 
@@ -188,5 +188,5 @@ class Renderer:
             self.art_cache[art_url] = art
             return art
         except Exception as e:
-            logger.warning(f"Erro ao carregar album art: {e}")
+            logger.warning(f"Error loading album art: {e}")
             return None

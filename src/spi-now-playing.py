@@ -11,7 +11,7 @@ from volumio import VolumioClient
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- CONFIGURAÇÕES ---
+# --- SETTINGS ---
 WIDTH, HEIGHT = 480, 320
 FB_DEVICE = os.getenv("FB_DEVICE", "/dev/fb0")
 VOLUMIO_URL = os.getenv("VOLUMIO_URL", "ws://localhost:3000/socket.io/?EIO=3&transport=websocket")
@@ -21,7 +21,7 @@ CYCLE_TIME = 30
 # Standby time in seconds (default: 600 = 10 minutes)
 STANDBY_TIMEOUT = int(os.getenv("STANDBY_TIMEOUT", 600))
 
-# Estado Global
+# Global State
 last_state = None
 last_rendered_state = None
 last_active_time = time.time()
@@ -35,7 +35,7 @@ renderer = None
 volumio = None
 
 def states_are_equal(s1, s2):
-    """Compara dois estados para ver se os campos visíveis mudaram."""
+    """Compares two states to see if visible fields have changed."""
     if s1 is None or s2 is None:
         return s1 == s2
     
@@ -46,9 +46,9 @@ def states_are_equal(s1, s2):
     return True
 
 def signal_handler(sig, frame):
-    logger.info("Encerrando aplicação...")
+    logger.info("Exiting application...")
     if renderer:
-        # Durante o encerramento, não usamos fsync para evitar bloqueios longos
+        # During shutdown, do not use fsync to avoid long blocks
         renderer.clear(use_fsync=False)
         renderer.close()
     if volumio:
@@ -63,18 +63,18 @@ def main():
     
     logger.info("SPI Now Playing - Starting...")
     
-    # Inicializa os módulos
+    # Initialize modules
     renderer = Renderer(WIDTH, HEIGHT, FB_DEVICE, COLOR_FORMAT)
     volumio = VolumioClient(VOLUMIO_URL)
     
-    # Inicializa o temporizador de inatividade
+    # Initialize inactivity timer
     last_active_time = time.time()
     
     renderer.clear()
 
     while True:
         try:
-            logger.info(f"Conectando ao Volumio em {VOLUMIO_URL}...")
+            logger.info(f"Connecting to Volumio at {VOLUMIO_URL}...")
             if not volumio.connect():
                 time.sleep(5)
                 continue
@@ -84,61 +84,61 @@ def main():
             while True:
                 now = time.time()
                 
-                # Sincronização periódica a cada 30 segundos
+                # Periodic synchronization every 30 seconds
                 if now - last_sync_time > 30:
                     volumio.get_state()
                     last_sync_time = now
                 
-                # Recebe mensagens
+                # Receive messages
                 new_data = volumio.receive_message(timeout=1.0)
                 
                 if new_data:
-                    # Detecta mudança de música para resetar modo texto
+                    # Detect song change to reset text mode
                     if last_state and new_data.get('title') != last_state.get('title'):
                         show_capa_mode = False
                         last_cycle_time = now
-                        logger.info(f"Nova música detectada: {new_data.get('title')} - {new_data.get('artist')}")
+                        logger.info(f"New song detected: {new_data.get('title')} - {new_data.get('artist')}")
                     
                     # Reset standby timer on ANY state change message
                     last_active_time = now
                     
                     # Wake up if we were sleeping
                     if is_sleeping:
-                        logger.info("Atividade detectada, saindo do modo standby...")
+                        logger.info("Activity detected, exiting standby mode...")
                         is_sleeping = False
                     
-                    # Renderiza apenas se o estado mudou ou se saímos do modo standby
+                    # Render only if state changed or we exited standby mode
                     if not states_are_equal(new_data, last_rendered_state) or is_sleeping:
                         renderer.render(new_data, show_capa_mode)
                         last_rendered_state = new_data.copy()
                     
                     last_state = new_data
                 
-                # Verificações de tempo e estado
+                # Time and state checks
                 if not last_state:
                     continue
                 
-                # Standby (Desliga a tela se inativo por muito tempo)
+                # Standby (Turn off screen if inactive for too long)
                 if last_state.get('status') == 'play':
                     last_active_time = now
                     is_sleeping = False
                 
                 if last_state.get('status') != 'play' and (now - last_active_time > STANDBY_TIMEOUT):
                     if not is_sleeping:
-                        logger.info(f"Inativo por {STANDBY_TIMEOUT}s. Entrando em standby...")
+                        logger.info(f"Inactive for {STANDBY_TIMEOUT}s. Entering standby...")
                         renderer.clear()
                         is_sleeping = True
                     continue
                 
-                # Alternância automática Texto (30s) -> Capa
+                # Automatic switch: Text (30s) -> Cover
                 if not show_capa_mode and (now - last_cycle_time > CYCLE_TIME) and last_state.get('status') == 'play':
-                    logger.info("Alternando para modo capa...")
+                    logger.info("Switching to cover mode...")
                     show_capa_mode = True
                     renderer.render(last_state, show_capa_mode)
                     last_rendered_state = last_state.copy()
 
         except Exception as e:
-            logger.error(f"Erro na conexão/loop principal: {e}")
+            logger.error(f"Error in connection/main loop: {e}")
             if volumio:
                 volumio.close()
             time.sleep(5)
