@@ -27,6 +27,7 @@ last_rendered_state = None
 last_active_time = time.time()
 last_cycle_time = time.time()
 last_sync_time = 0
+last_render_time = 0
 show_capa_mode = False
 is_sleeping = False
 
@@ -59,7 +60,7 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 def main():
-    global last_state, last_rendered_state, last_active_time, last_cycle_time, last_sync_time, show_capa_mode, is_sleeping, renderer, volumio
+    global last_state, last_rendered_state, last_active_time, last_cycle_time, last_sync_time, last_render_time, show_capa_mode, is_sleeping, renderer, volumio
     
     logger.info("SPI Now Playing - Starting...")
     
@@ -90,7 +91,8 @@ def main():
                     last_sync_time = now
                 
                 # Receive messages
-                new_data = volumio.receive_message(timeout=1.0)
+                # We use a shorter timeout for more frequent progress bar updates
+                new_data = volumio.receive_message(timeout=0.5)
                 
                 if new_data:
                     # Detect song change to reset text mode
@@ -107,14 +109,26 @@ def main():
                         logger.info("Activity detected, exiting standby mode...")
                         is_sleeping = False
                     
-                    # Render only if state changed or we exited standby mode
-                    if not states_are_equal(new_data, last_rendered_state) or is_sleeping:
-                        renderer.render(new_data, show_capa_mode)
-                        last_rendered_state = new_data.copy()
-                    
+                    # Update state
                     last_state = new_data
                 
-                # Time and state checks
+                # Handle rendering
+                if last_state and not is_sleeping:
+                    # Render immediately if state changed
+                    if not states_are_equal(last_state, last_rendered_state):
+                        renderer.render(last_state, show_capa_mode)
+                        last_rendered_state = last_state.copy()
+                        last_render_time = now
+                    
+                    # Update progress bar every 1s while playing
+                    elif last_state.get('status') == 'play' and (now - last_render_time >= 1.0):
+                        # Increment local seek for smoother bar
+                        # Volumio gives us 'seek' in ms at the time pushState was sent.
+                        # We don't have a perfect local timer, so we'll just re-render.
+                        renderer.render(last_state, show_capa_mode)
+                        last_render_time = now
+                
+                # Standby and mode switching
                 if not last_state:
                     continue
                 
@@ -131,13 +145,14 @@ def main():
                     continue
                 
                 # Automatic mode switching: alternating between Text and Cover every CYCLE_TIME
-                if last_state and last_state.get('status') == 'play':
+                if last_state.get('status') == 'play':
                     if now - last_cycle_time > CYCLE_TIME:
                         show_capa_mode = not show_capa_mode
                         last_cycle_time = now
                         logger.info(f"Switching to {'cover' if show_capa_mode else 'text'} mode...")
                         renderer.render(last_state, show_capa_mode)
                         last_rendered_state = last_state.copy()
+                        last_render_time = now
 
         except Exception as e:
             logger.error(f"Error in connection/main loop: {e}")
