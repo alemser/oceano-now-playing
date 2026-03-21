@@ -50,18 +50,22 @@ def states_are_equal(s1, s2):
     return True
 
 def disable_cursor():
-    """Disables the blinking cursor on the framebuffer console."""
-    for tty in ['tty0', 'tty1', 'tty2']:
+    """Disables the blinking cursor on the framebuffer console using ANSI escape codes."""
+    for tty in ['tty0', 'tty1', 'tty2', 'console']:
         try:
-            os.system(f"setterm -cursor off > /dev/{tty} 2>/dev/null || true")
+            with open(f'/dev/{tty}', 'w') as f:
+                f.write('\033[?25l')  # ANSI escape code to hide cursor
+                f.flush()
         except:
             pass
 
 def enable_cursor():
-    """Re-enables the cursor on exit."""
-    for tty in ['tty0', 'tty1', 'tty2']:
+    """Re-enables the cursor on exit using ANSI escape codes."""
+    for tty in ['tty0', 'tty1', 'tty2', 'console']:
         try:
-            os.system(f"setterm -cursor on > /dev/{tty} 2>/dev/null || true")
+            with open(f'/dev/{tty}', 'w') as f:
+                f.write('\033[?25h')  # ANSI escape code to show cursor
+                f.flush()
         except:
             pass
 
