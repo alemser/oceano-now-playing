@@ -73,9 +73,9 @@ def main():
     # Initialize inactivity timer
     last_active_time = time.time()
     
-    # Clear the screen and draw a "Starting" message or just clear it
-    renderer.clear()
-    logger.info("Initial screen cleared.")
+    # Show the idle screen logo instead of just clearing
+    renderer.render_idle_screen()
+    logger.info("Startup screen displayed.")
 
     while True:
         try:
@@ -146,6 +146,13 @@ def main():
                 if not last_state:
                     continue
                 
+                # Show idle screen if stopped
+                if last_state.get('status') == 'stop':
+                    if not is_sleeping:
+                        renderer.render_idle_screen()
+                        # We don't set is_sleeping to True here as it's just 'stopped'
+                    continue
+
                 # Standby (Turn off screen if inactive for too long)
                 if last_state.get('status') == 'play':
                     last_active_time = now

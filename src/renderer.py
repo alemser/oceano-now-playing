@@ -155,6 +155,47 @@ class Renderer:
         draw.text(((self.width - w) // 2, y), text, fill=fill, font=current_font)
         return y + (bbox[3] - bbox[1]) + 10
 
+    def render_idle_screen(self):
+        """Renders a stylized grayscale logo for the idle/startup state."""
+        img = Image.new('RGB', (self.width, self.height), color=(10, 10, 10))
+        draw = ImageDraw.Draw(img)
+        
+        center_x = self.width // 2
+        center_y = self.height // 2
+        
+        # Draw a stylized icon (sound waves/bars)
+        bar_width = 12
+        gap = 8
+        colors = [(40, 40, 40), (70, 70, 70), (100, 100, 100), (70, 70, 70), (40, 40, 40)]
+        heights = [40, 70, 100, 70, 40]
+        
+        start_x = center_x - (len(heights) * (bar_width + gap) - gap) // 2
+        for i, h in enumerate(heights):
+            x = start_x + i * (bar_width + gap)
+            draw.rounded_rectangle(
+                (x, center_y - h // 2 - 30, x + bar_width, center_y + h // 2 - 30),
+                radius=4,
+                fill=colors[i]
+            )
+            
+        # Draw text
+        f_logo = self.get_font(28, bold=True)
+        f_sub = self.get_font(16)
+        
+        text1 = "SPI NOW PLAYING"
+        text2 = "Waiting for Volumio..."
+        
+        bbox1 = draw.textbbox((0, 0), text1, font=f_logo)
+        w1 = bbox1[2] - bbox1[0]
+        draw.text(((self.width - w1) // 2, center_y + 40), text1, fill=(140, 140, 140), font=f_logo)
+        
+        bbox2 = draw.textbbox((0, 0), text2, font=f_sub)
+        w2 = bbox2[2] - bbox2[0]
+        draw.text(((self.width - w2) // 2, center_y + 80), text2, fill=(80, 80, 80), font=f_sub)
+        
+        self._write_to_fb(img)
+        return img
+
     def render(self, data, show_capa_mode=False):
         """Renders the complete V2 interface."""
         if not data:
