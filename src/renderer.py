@@ -46,9 +46,30 @@ class Renderer:
         return (b << 11 | g << 5 | r).tobytes()
 
     def clear(self):
-        """Limpa o framebuffer."""
-        blank = Image.new('RGB', (self.width, self.height), color=(0, 0, 0))
-        self._write_to_fb(blank)
+        """Limpa o framebuffer de forma robusta, preenchendo todo o dispositivo com zeros."""
+        try:
+            if not self.fb_handle:
+                self._open_fb()
+            
+            if self.fb_handle:
+                self.fb_handle.seek(0)
+                # Tenta escrever um buffer maior que o esperado para garantir que limpamos tudo
+                # O driver do framebuffer impedirá de escrever além do final do arquivo
+                # Para 480x320 BGR565, isso é 307200 bytes. Vamos tentar escrever um pouco mais.
+                total_bytes = (self.width * (self.height + 2)) * 2
+                black_buffer = b'\x00' * total_bytes
+                
+                try:
+                    self.fb_handle.write(black_buffer)
+                except OSError:
+                    # O erro de escrita ao atingir o final do dispositivo é esperado aqui
+                    pass
+                
+                self.fb_handle.flush()
+                os.fsync(self.fb_handle.fileno())
+        except Exception as e:
+            logger.error(f"Erro ao limpar framebuffer de forma robusta: {e}")
+            self.fb_handle = None
 
     def _write_to_fb(self, img):
         """Escreve a imagem no framebuffer persistente."""
@@ -62,6 +83,8 @@ class Renderer:
                 self.fb_handle.seek(0)
                 self.fb_handle.write(raw)
                 self.fb_handle.flush()
+                # Força a escrita no hardware
+                os.fsync(self.fb_handle.fileno())
             except Exception as e:
                 logger.error(f"Erro ao escrever no framebuffer: {e}")
                 self.fb_handle = None # Força reabertura na próxima vez
