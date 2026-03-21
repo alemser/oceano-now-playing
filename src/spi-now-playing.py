@@ -193,7 +193,9 @@ def main():
                 
                 # If we get here, we are playing
                 if is_sleeping or is_showing_idle:
-                    logger.info(f"Playback resumed from {('sleep' if is_sleeping else 'idle')} state. Forcing re-render...")
+                    logger.info("Playback resumed, waking up display...")
+                    # Clear the screen to ensure a fresh start
+                    renderer.clear()
                     is_sleeping = False
                     is_showing_idle = False
                     # Reset mode to text and restart cycle timer on resumption
@@ -202,7 +204,6 @@ def main():
                     # Force re-render after waking up
                     last_rendered_state = None
                     last_rendered_mode = None
-                    logger.info("State reset. last_rendered_state and last_rendered_mode set to None")
                 
                 last_active_time = now
                 
@@ -229,7 +230,6 @@ def main():
                     render_data = last_state.copy()
                     render_data['seek'] = current_seek
                     
-                    logger.info(f"Rendering: state_changed={state_changed}, mode_changed={mode_changed}, progress_update={time_to_update_progress}")
                     renderer.render(render_data, show_capa_mode)
                     
                     last_rendered_state = last_state.copy()
