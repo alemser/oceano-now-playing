@@ -37,8 +37,17 @@ EndSection
 
 Check if the device exists after a reboot: `ls /dev/fb0`.
 
-### 3. Automatic Installation
-Run the following commands in the project directory:
+### 3. Quick One-Line Installation
+If you haven't cloned the repository yet, you can run this command directly on your Raspberry Pi:
+
+```bash
+git clone https://github.com/alemser/spi-now-playing.git && cd spi-now-playing && chmod +x install.sh && ./install.sh
+```
+
+This will clone the project and run the installer.
+
+### 4. Manual Installation
+If you already have the files locally:
 ```bash
 chmod +x install.sh
 ./install.sh
