@@ -157,28 +157,36 @@ def main():
 
                 # --- HANDLE IDLE/STANDBY STATES ---
                 
-                # If stopped, show idle screen (only once)
-                if last_state.get('status') == 'stop':
-                    if not is_showing_idle:
-                        logger.info("Player stopped. Showing idle screen.")
+                # If stopped or paused, show idle screen after a short timeout
+                # or clear screen after a long timeout (STANDBY_TIMEOUT)
+                
+                if last_state.get('status') != 'play':
+                    # If stopped or paused for more than STANDBY_TIMEOUT, clear screen (standby)
+                    if now - last_active_time > STANDBY_TIMEOUT:
+                        if not is_sleeping:
+                            logger.info(f"Inactive for {STANDBY_TIMEOUT}s. Entering standby.")
+                            renderer.clear()
+                            is_sleeping = True
+                            is_showing_idle = False
+                        continue
+                    
+                    # If stopped or paused, show idle screen
+                    if not is_showing_idle and not is_sleeping:
+                        logger.info(f"Player {last_state.get('status')}. Showing idle screen.")
                         renderer.render_idle_screen()
                         is_showing_idle = True
                     continue # Skip music rendering
                 
-                # Standby logic (if paused for too long)
-                if last_state.get('status') == 'play':
-                    last_active_time = now
+                # If we get here, we are playing
+                if is_sleeping or is_showing_idle:
+                    logger.info("Playback resumed, waking up display...")
                     is_sleeping = False
                     is_showing_idle = False
+                    # Reset mode to text and restart cycle timer on resumption
+                    show_capa_mode = False
+                    last_cycle_time = now
                 
-                if last_state.get('status') != 'play' and (now - last_active_time > STANDBY_TIMEOUT):
-                    if not is_sleeping:
-                        logger.info(f"Inactive for {STANDBY_TIMEOUT}s. Entering standby.")
-                        renderer.clear()
-                        is_sleeping = True
-                    continue
-                
-                # If we get here, we are either playing or paused (but not yet sleeping)
+                last_active_time = now
                 
                 # --- HANDLE MUSIC RENDERING ---
                 
