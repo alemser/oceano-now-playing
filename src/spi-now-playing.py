@@ -147,6 +147,9 @@ def main():
     
     logger.info("SPI Now Playing - Starting...")
     
+    # Inicializa o temporizador de inatividade com o momento atual
+    last_active_time = time.time()
+    
     # Tenta garantir permissões no framebuffer
     if os.path.exists(FB_DEVICE):
         try:
@@ -203,9 +206,14 @@ def main():
                 now = time.time()
                 
                 # Standby (Desliga a tela se inativo por muito tempo)
+                # Se estiver tocando, mantemos o temporizador atualizado
+                if last_state.get('status') == 'play':
+                    last_active_time = now
+                    is_sleeping = False # Garante que acordamos se o status for 'play'
+                
                 if last_state.get('status') != 'play' and (now - last_active_time > STANDBY_TIMEOUT):
                     if not is_sleeping:
-                        logger.info("Entrando em modo standby...")
+                        logger.info(f"Inativo por {STANDBY_TIMEOUT}s. Entrando em standby...")
                         clear_fb()
                         is_sleeping = True
                     continue
