@@ -250,13 +250,9 @@ class Renderer:
         draw.rectangle((0, pb_y, self.width, self.height), fill=(40, 40, 40)) # Background
         draw.rectangle((0, pb_y, int(self.width * progress), self.height), fill=accent_color) # Progress
 
-        # --- DRAW TIME STATUS ---
-        time_str = f"{self._format_time(seek)} / {self._format_time(duration)}"
-        tw, th = draw.textbbox((0, 0), time_str, font=f_small)[2:]
-        draw.text((self.width - tw - 10, pb_y - th - 10), time_str, fill=(180, 180, 180), font=f_small)
-
         # --- DRAW STATUS ICON ---
         icon = "▶" if status == 'play' else "II"
+        _, th = draw.textbbox((0, 0), icon, font=f_small)[2:]
         draw.text((10, pb_y - th - 10), icon, fill=accent_color, font=f_small)
 
         if not show_capa_mode:
