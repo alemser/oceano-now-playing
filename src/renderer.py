@@ -22,7 +22,7 @@ class Renderer:
         self._open_fb()
 
     def _open_fb(self):
-        """Abre o framebuffer de forma persistente e detecta seu tamanho real."""
+        """Abre o framebuffer de forma persistente e detecta seu tamanho real e stride."""
         if os.path.exists(self.fb_device):
             try:
                 # Tenta garantir permissões
@@ -34,7 +34,11 @@ class Renderer:
                 self.real_fb_size = self.fb_handle.tell()
                 self.fb_handle.seek(0)
                 
-                logger.info(f"Framebuffer {self.fb_device} aberto. Tamanho detectado: {self.real_fb_size} bytes.")
+                # Detecta o stride (bytes por linha)
+                # Se o tamanho total for divisível pela altura, esse é o stride
+                self.stride = self.real_fb_size // self.height
+                
+                logger.info(f"Framebuffer {self.fb_device} aberto. Tamanho: {self.real_fb_size} bytes. Stride: {self.stride} bytes.")
             except Exception as e:
                 logger.error(f"Não foi possível abrir o framebuffer {self.fb_device}: {e}")
         else:
@@ -70,22 +74,32 @@ class Renderer:
             self.fb_handle = None
 
     def _write_to_fb(self, img):
-        """Escreve a imagem no framebuffer persistente."""
+        """Escreve a imagem no framebuffer considerando o stride."""
         if not self.fb_handle:
-            # Tenta reabrir se estiver fechado
             self._open_fb()
         
         if self.fb_handle:
             try:
                 raw = self._rgb888_to_bgr565(img)
                 self.fb_handle.seek(0)
-                self.fb_handle.write(raw)
+                
+                # Se o stride for diferente de width * 2, escrevemos linha por linha
+                expected_line_bytes = self.width * 2
+                if self.stride != expected_line_bytes:
+                    for y in range(self.height):
+                        start = y * expected_line_bytes
+                        end = start + expected_line_bytes
+                        self.fb_handle.seek(y * self.stride)
+                        self.fb_handle.write(raw[start:end])
+                else:
+                    # Caso contrário, escrevemos tudo de uma vez
+                    self.fb_handle.write(raw)
+                
                 self.fb_handle.flush()
-                # Força a escrita no hardware
                 os.fsync(self.fb_handle.fileno())
             except Exception as e:
                 logger.error(f"Erro ao escrever no framebuffer: {e}")
-                self.fb_handle = None # Força reabertura na próxima vez
+                self.fb_handle = None
 
     def get_font(self, size, bold=False):
         """Tenta carregar fontes comuns ou retorna a padrão."""
