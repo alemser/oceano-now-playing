@@ -77,6 +77,14 @@ The program runs automatically on startup. Use these commands to manage it:
 - **Restart Service**: `sudo systemctl restart spi-now-playing.service`
 - **View Logs**: `journalctl -u spi-now-playing.service -f`
 
+## Updating
+
+To update the project reliably (with automatic rollback on failure):
+```bash
+./update.sh
+```
+This script will stop the service, pull the latest code, update dependencies, and restart the service. If the new version fails to start, it will automatically roll back to the previous working version.
+
 ## Uninstallation
 
 To remove the service and the virtual environment:
