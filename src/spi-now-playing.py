@@ -49,13 +49,26 @@ def states_are_equal(s1, s2):
             return False
     return True
 
+def disable_cursor():
+    """Disables the blinking cursor on the framebuffer console."""
+    for tty in ['tty0', 'tty1', 'tty2']:
+        try:
+            os.system(f"sudo sh -c 'setterm -cursor off > /dev/{tty}' 2>/dev/null || true")
+        except:
+            pass
+
+def enable_cursor():
+    """Re-enables the cursor on exit."""
+    for tty in ['tty0', 'tty1', 'tty2']:
+        try:
+            os.system(f"sudo sh -c 'setterm -cursor on > /dev/{tty}' 2>/dev/null || true")
+        except:
+            pass
+
 def signal_handler(sig, frame):
     logger.info("Exiting application...")
     # Re-enable the cursor on exit
-    try:
-        os.system("sudo sh -c 'setterm -cursor on > /dev/tty1'")
-    except:
-        pass
+    enable_cursor()
     if renderer:
         # During shutdown, do not use fsync to avoid long blocks
         renderer.clear(use_fsync=False)
@@ -85,10 +98,7 @@ def main():
     volumio = VolumioClient(VOLUMIO_URL)
     
     # Disable the blinking cursor on the framebuffer console
-    try:
-        os.system("sudo sh -c 'setterm -cursor off > /dev/tty1'")
-    except:
-        pass
+    disable_cursor()
     
     # Initialize inactivity timer
     last_active_time = time.time()
