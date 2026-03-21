@@ -205,10 +205,12 @@ class Renderer:
 
         # Ensure framebuffer is open
         if not self.fb_handle:
+            logger.info("Framebuffer handle was closed, re-opening.")
             self._open_fb()
 
-        img = Image.new('RGB', (self.width, self.height), color=(0, 0, 0))
-        draw = ImageDraw.Draw(img)
+        try:
+            img = Image.new('RGB', (self.width, self.height), color=(0, 0, 0))
+            draw = ImageDraw.Draw(img)
 
         # Fonts
         f_xl = self.get_font(42, bold=True)
@@ -306,7 +308,15 @@ class Renderer:
                     art_y = (self.height - self.art_size) // 2 - 10
                     img.paste(art, (art_x, art_y))
 
-        self._write_to_fb(img)
+            self._write_to_fb(img)
+        except Exception as e:
+            logger.error(f"Error in render function: {e}", exc_info=True)
+            # Try to write a black screen as fallback
+            try:
+                img = Image.new('RGB', (self.width, self.height), color=(0, 0, 0))
+                self._write_to_fb(img)
+            except:
+                pass
 
     def clear_art_cache(self):
         """Clears the album art cache."""
