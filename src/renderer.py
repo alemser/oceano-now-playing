@@ -1,4 +1,5 @@
 import os
+import time
 import textwrap
 import logging
 from io import BytesIO
@@ -9,11 +10,12 @@ from PIL import Image, ImageDraw, ImageFont, ImageStat
 logger = logging.getLogger(__name__)
 
 class Renderer:
-    def __init__(self, width=480, height=320, fb_device="/dev/fb0", color_format="RGB565"):
+    def __init__(self, width=480, height=320, fb_device="/dev/fb0", color_format="RGB565", volumio_host="localhost"):
         self.width = width
         self.height = height
         self.fb_device = fb_device
         self.color_format = color_format.upper()
+        self.volumio_host = volumio_host
         self.fb_handle = None
         self.art_cache = {}  # Cache for resized images and their dominant colors
         self.art_size = 320
@@ -304,6 +306,10 @@ class Renderer:
 
         self._write_to_fb(img)
 
+    def clear_art_cache(self):
+        """Clears the album art cache."""
+        self.art_cache.clear()
+
     def _get_cached_art(self, art_url):
         """Fetches and resizes the cover art, with caching and dominant color extraction."""
         if art_url in self.art_cache:
@@ -313,7 +319,17 @@ class Renderer:
             if len(self.art_cache) > 10:
                 self.art_cache.clear()
 
-            url = f"http://localhost:3000{art_url}" if art_url.startswith('/') else art_url
+            # Build URL and add cache buster if it's a relative path from Volumio
+            if art_url.startswith('/'):
+                url = f"http://{self.volumio_host}:3000{art_url}"
+                # Add a timestamp to bypass any server-side caching if the URL is too generic
+                if "?" in url:
+                    url += f"&t={int(time.time())}"
+                else:
+                    url += f"?t={int(time.time())}"
+            else:
+                url = art_url
+            
             res = requests.get(url, timeout=3)
             art = Image.open(BytesIO(res.content)).convert("RGB")
             

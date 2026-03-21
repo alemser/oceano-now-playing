@@ -73,7 +73,15 @@ def main():
     logger.info("SPI Now Playing - Starting...")
     
     # Initialize modules
-    renderer = Renderer(WIDTH, HEIGHT, FB_DEVICE, COLOR_FORMAT)
+    # Extract Volumio host for renderer to fetch album art
+    volumio_host = "localhost"
+    try:
+        # Example: ws://192.168.1.10:3000/... -> 192.168.1.10
+        volumio_host = VOLUMIO_URL.split("://")[1].split(":")[0]
+    except:
+        pass
+
+    renderer = Renderer(WIDTH, HEIGHT, FB_DEVICE, COLOR_FORMAT, volumio_host=volumio_host)
     volumio = VolumioClient(VOLUMIO_URL)
     
     # Disable the blinking cursor on the framebuffer console
@@ -115,11 +123,19 @@ def main():
                 new_data = volumio.receive_message(timeout=0.5)
                 
                 if new_data:
-                    # Detect song change to reset text mode
-                    if last_state and new_data.get('title') != last_state.get('title'):
+                    # Detect song change to reset text mode and clear art cache
+                    is_new_song = False
+                    if not last_state:
+                        is_new_song = True
+                    elif new_data.get('title') != last_state.get('title') or new_data.get('artist') != last_state.get('artist'):
+                        is_new_song = True
+                    
+                    if is_new_song:
                         show_capa_mode = False
                         last_cycle_time = now
-                        logger.info(f"New song detected: {new_data.get('title')} - {new_data.get('artist')}")
+                        if renderer:
+                            renderer.clear_art_cache()
+                        logger.info(f"New song detected: {new_data.get('title')} - {new_data.get('artist')}. Starting in text mode.")
                     
                     # Store data for local seek interpolation
                     last_volumio_seek = new_data.get('seek', 0)
@@ -194,12 +210,6 @@ def main():
                     last_render_time = now
                     is_showing_idle = False
                     is_sleeping = False
-
-        except Exception as e:
-            logger.error(f"Error in connection/main loop: {e}")
-            if volumio:
-                volumio.close()
-            time.sleep(5)
 
         except Exception as e:
             logger.error(f"Error in connection/main loop: {e}")
