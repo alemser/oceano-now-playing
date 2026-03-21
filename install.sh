@@ -10,7 +10,11 @@ echo "Installing system dependencies..."
 sudo apt-get update
 sudo apt-get install -y python3-pip python3-venv python3-numpy python3-pil fonts-dejavu-core libopenblas-dev libatlas-base-dev
 
-# 2. Setup Virtual Environment
+# 2. Add current user to video group
+echo "Ensuring user $(whoami) is in the video group for framebuffer access..."
+sudo usermod -a -G video $(whoami)
+
+# 3. Setup Virtual Environment
 echo "Setting up virtual environment..."
 if [ ! -d "venv" ]; then
     python3 -m venv venv
