@@ -13,8 +13,11 @@ sudo apt-get install -y python3-pip python3-venv python3-numpy python3-pil fonts
 # 2. Add current user to video group
 echo "Ensuring user $(whoami) is in the video group for framebuffer access..."
 sudo usermod -a -G video $(whoami)
+sudo usermod -a -G tty $(whoami) # Also add to tty group to control cursor
 
-# 3. Setup Virtual Environment
+# 3. Disable cursor on boot (optional but recommended)
+echo "Disabling blinking cursor on terminal..."
+sudo sh -c "setterm -cursor off > /dev/tty1" || true
 echo "Setting up virtual environment..."
 if [ ! -d "venv" ]; then
     python3 -m venv venv
