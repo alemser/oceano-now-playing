@@ -65,6 +65,7 @@ You can customize the behavior by editing the constants at the top of `src/spi-n
 - **STANDBY_TIMEOUT**: Time in seconds of inactivity before the screen goes black (default: `600` = 10 minutes).
 - **CYCLE_TIME**: Time in seconds to switch from Text Mode to Album Art Mode (default: `30` seconds).
 - **FB_DEVICE**: Framebuffer device path (default: `/dev/fb0`).
+- **COLOR_FORMAT**: Color encoding for the display, either `RGB565` or `BGR565` (default: `RGB565`). If your reds look blue and vice-versa, try switching this.
 
 To change these via the service, edit `/etc/systemd/system/spi-now-playing.service` and add `Environment="STANDBY_TIMEOUT=600"` under the `[Service]` section.
 

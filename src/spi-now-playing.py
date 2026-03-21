@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 WIDTH, HEIGHT = 480, 320
 FB_DEVICE = os.getenv("FB_DEVICE", "/dev/fb0")
 VOLUMIO_URL = os.getenv("VOLUMIO_URL", "ws://localhost:3000/socket.io/?EIO=3&transport=websocket")
+COLOR_FORMAT = os.getenv("COLOR_FORMAT", "RGB565")
 
 CYCLE_TIME = 30
 # Standby time in seconds (default: 600 = 10 minutes)
@@ -62,7 +63,7 @@ def main():
     logger.info("SPI Now Playing - Starting...")
     
     # Inicializa os módulos
-    renderer = Renderer(WIDTH, HEIGHT, FB_DEVICE)
+    renderer = Renderer(WIDTH, HEIGHT, FB_DEVICE, COLOR_FORMAT)
     volumio = VolumioClient(VOLUMIO_URL)
     
     # Inicializa o temporizador de inatividade

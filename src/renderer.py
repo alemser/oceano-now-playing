@@ -9,10 +9,11 @@ from PIL import Image, ImageDraw, ImageFont
 logger = logging.getLogger(__name__)
 
 class Renderer:
-    def __init__(self, width=480, height=320, fb_device="/dev/fb0"):
+    def __init__(self, width=480, height=320, fb_device="/dev/fb0", color_format="RGB565"):
         self.width = width
         self.height = height
         self.fb_device = fb_device
+        self.color_format = color_format.upper()
         self.fb_handle = None
         self.art_cache = {}  # Cache para imagens redimensionadas
         self.art_size = 320
@@ -38,7 +39,7 @@ class Renderer:
                 # Se o tamanho total for divisível pela altura, esse é o stride
                 self.stride = self.real_fb_size // self.height
                 
-                logger.info(f"Framebuffer {self.fb_device} aberto. Tamanho: {self.real_fb_size} bytes. Stride: {self.stride} bytes.")
+                logger.info(f"Framebuffer {self.fb_device} aberto. Tamanho: {self.real_fb_size} bytes. Stride: {self.stride} bytes. Formato: {self.color_format}")
             except Exception as e:
                 logger.error(f"Não foi possível abrir o framebuffer {self.fb_device}: {e}")
         else:
@@ -50,11 +51,17 @@ class Renderer:
             self.fb_handle.close()
             self.fb_handle = None
 
-    def _rgb888_to_bgr565(self, img):
-        """Converte RGB888 para BGR565."""
+    def _rgb888_to_565(self, img):
+        """Converte RGB888 para 565 de acordo com o formato (RGB ou BGR)."""
         img_array = np.array(img).astype(np.uint16)
         r, g, b = (img_array[:,:,0] >> 3), (img_array[:,:,1] >> 2), (img_array[:,:,2] >> 3)
-        return (b << 11 | g << 5 | r).tobytes()
+        
+        if self.color_format == "BGR565":
+            # B (bits 11-15), G (bits 5-10), R (bits 0-4)
+            return (b << 11 | g << 5 | r).tobytes()
+        else:
+            # Padrão: RGB565 - R (bits 11-15), G (bits 5-10), B (bits 0-4)
+            return (r << 11 | g << 5 | b).tobytes()
 
     def clear(self):
         """Limpa o framebuffer preenchendo todo o dispositivo com zeros."""
@@ -80,7 +87,7 @@ class Renderer:
         
         if self.fb_handle:
             try:
-                raw = self._rgb888_to_bgr565(img)
+                raw = self._rgb888_to_565(img)
                 self.fb_handle.seek(0)
                 
                 # Se o stride for diferente de width * 2, escrevemos linha por linha
