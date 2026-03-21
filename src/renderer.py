@@ -23,7 +23,7 @@ class Renderer:
         self._open_fb()
 
     def _open_fb(self):
-        """Abre o framebuffer de forma persistente e detecta seu tamanho real e stride."""
+        """Abre o framebuffer de forma persistente e detecta seu tamanho real."""
         if os.path.exists(self.fb_device):
             try:
                 # Tenta garantir permissões
@@ -35,11 +35,7 @@ class Renderer:
                 self.real_fb_size = self.fb_handle.tell()
                 self.fb_handle.seek(0)
                 
-                # Detecta o stride (bytes por linha)
-                # Se o tamanho total for divisível pela altura, esse é o stride
-                self.stride = self.real_fb_size // self.height
-                
-                logger.info(f"Framebuffer {self.fb_device} aberto. Tamanho: {self.real_fb_size} bytes. Stride: {self.stride} bytes. Formato: {self.color_format}")
+                logger.info(f"Framebuffer {self.fb_device} aberto. Tamanho detectado: {self.real_fb_size} bytes. Formato: {self.color_format}")
             except Exception as e:
                 logger.error(f"Não foi possível abrir o framebuffer {self.fb_device}: {e}")
         else:
@@ -85,7 +81,7 @@ class Renderer:
             self.fb_handle = None
 
     def _write_to_fb(self, img):
-        """Escreve a imagem no framebuffer considerando o stride."""
+        """Escreve a imagem no framebuffer da forma mais direta possível."""
         if not self.fb_handle:
             self._open_fb()
         
@@ -94,20 +90,18 @@ class Renderer:
                 raw = self._rgb888_to_565(img)
                 self.fb_handle.seek(0)
                 
-                # Se o stride for diferente de width * 2, escrevemos linha por linha
-                expected_line_bytes = self.width * 2
-                if self.stride != expected_line_bytes:
-                    for y in range(self.height):
-                        start = y * expected_line_bytes
-                        end = start + expected_line_bytes
-                        self.fb_handle.seek(y * self.stride)
-                        self.fb_handle.write(raw[start:end])
-                else:
-                    # Caso contrário, escrevemos tudo de uma vez
-                    self.fb_handle.write(raw)
+                # Escrevemos exatamente a quantidade de bytes da imagem (WIDTH * HEIGHT * 2)
+                # sem tentar preencher o dispositivo inteiro para evitar desalinhamentos
+                img_bytes = self.width * self.height * 2
+                self.fb_handle.write(raw[:img_bytes])
                 
                 self.fb_handle.flush()
-                os.fsync(self.fb_handle.fileno())
+                # Opcional: fsync pode causar lentidão em alguns drivers SPI
+                # mas ajuda a evitar 'tearing'
+                try:
+                    os.fsync(self.fb_handle.fileno())
+                except:
+                    pass
             except Exception as e:
                 logger.error(f"Erro ao escrever no framebuffer: {e}")
                 self.fb_handle = None
