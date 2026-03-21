@@ -19,9 +19,25 @@ dtoverlay=piscreen,speed=16000000,rotate=90
 dtoverlay=vc4-kms-v3d,no_display
 ```
 
+### 2. Configure X11 for the LCD
+Create the file `/etc/X11/xorg.conf.d/95-pi5-lcd.conf` with the following content:
+
+```bash
+Section "Device"
+    Identifier "LCD"
+    Driver "fbdev"
+    Option "fbdev" "/dev/fb0"
+EndSection
+
+Section "Screen"
+    Identifier "Screen0"
+    Device "LCD"
+EndSection
+```
+
 Check if the device exists after a reboot: `ls /dev/fb0`.
 
-### 2. Automatic Installation
+### 3. Automatic Installation
 Run the following commands in the project directory:
 ```bash
 chmod +x install.sh
