@@ -48,7 +48,8 @@ def states_are_equal(s1, s2):
 def signal_handler(sig, frame):
     logger.info("Encerrando aplicação...")
     if renderer:
-        renderer.clear()
+        # Durante o encerramento, não usamos fsync para evitar bloqueios longos
+        renderer.clear(use_fsync=False)
         renderer.close()
     if volumio:
         volumio.close()

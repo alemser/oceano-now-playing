@@ -11,7 +11,12 @@ echo "--- Starting Reliable Update ---"
 
 # 1. Stop the service
 echo "Stopping $SERVICE_NAME..."
-sudo systemctl stop $SERVICE_NAME || true
+# Tenta parar o serviço graciosamente, mas mata se demorar muito (timeout de 10s)
+if ! timeout 10s sudo systemctl stop $SERVICE_NAME; then
+    echo "WARNING: Service failed to stop gracefully. Killing it..."
+    sudo systemctl kill -s SIGKILL $SERVICE_NAME || true
+    sudo systemctl stop $SERVICE_NAME || true
+fi
 
 # 2. Pull the latest changes
 echo "Fetching latest changes from git..."

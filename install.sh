@@ -39,6 +39,7 @@ WorkingDirectory=${WORKING_DIR}
 StandardOutput=inherit
 StandardError=inherit
 Restart=always
+TimeoutStopSec=15
 User=${USER_NAME}
 Group=video
 

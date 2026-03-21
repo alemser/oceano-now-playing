@@ -63,7 +63,7 @@ class Renderer:
             # Padrão: RGB565 - R (bits 11-15), G (bits 5-10), B (bits 0-4)
             return (r << 11 | g << 5 | b).tobytes()
 
-    def clear(self):
+    def clear(self, use_fsync=True):
         """Limpa o framebuffer preenchendo todo o dispositivo com zeros."""
         try:
             if not self.fb_handle:
@@ -75,7 +75,11 @@ class Renderer:
                 black_buffer = b'\x00' * self.real_fb_size
                 self.fb_handle.write(black_buffer)
                 self.fb_handle.flush()
-                os.fsync(self.fb_handle.fileno())
+                if use_fsync:
+                    try:
+                        os.fsync(self.fb_handle.fileno())
+                    except OSError:
+                        pass # Alguns dispositivos não suportam fsync
         except Exception as e:
             logger.error(f"Erro ao limpar framebuffer: {e}")
             self.fb_handle = None
