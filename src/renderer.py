@@ -280,32 +280,27 @@ class Renderer:
                 draw.text(((self.width - qw) // 2, box_y + 3), quality_str, fill=accent_color, font=f_tech)
 
         else:
-            # --- MODE 2: COVER + ENHANCED TECH ---
+            # --- MODE 2: COVER WITH BLURRED BACKGROUND ---
             if art:
-                img.paste(art, (self.art_x, self.art_y))
-
-            # Tech Info Box on the right
-            x_pos = 345
-            y_cursor = 30
-            
-            if samplerate:
-                # Hi-Res Badge
-                is_hires = False
-                try:
-                    sr_val = float(samplerate.replace('kHz', '').strip())
-                    if sr_val > 48: is_hires = True
-                except: pass
+                # Create blurred background from the artwork
+                # Scale up the art and blur it to fill the screen
+                blur_art = art.resize((self.width * 2, self.height * 2), Image.Resampling.LANCZOS)
+                blur_art = blur_art.filter(Image.GaussianBlur(radius=40))
+                # Crop to center
+                blur_art = blur_art.crop(
+                    ((blur_art.width - self.width) // 2, (blur_art.height - self.height) // 2,
+                     (blur_art.width + self.width) // 2, (blur_art.height + self.height) // 2)
+                )
+                # Darken the blur background for better contrast
+                blur_array = np.array(blur_art).astype(float)
+                blur_array *= 0.5
+                blur_art = Image.fromarray(np.uint8(blur_array))
+                img.paste(blur_art, (0, 0))
                 
-                if is_hires:
-                    draw.rectangle((x_pos, y_cursor, x_pos + 120, y_cursor + 30), fill=accent_color)
-                    draw.text((x_pos + 10, y_cursor + 2), "HI-RES", fill=(0, 0, 0), font=f_tech)
-                    y_cursor += 45
-                
-                draw.text((x_pos, y_cursor), f"{samplerate}", fill=accent_color, font=f_tech)
-                y_cursor += 30
-            
-            if bitdepth:
-                draw.text((x_pos, y_cursor), f"{bitdepth}", fill=(200, 200, 200), font=f_tech)
+                # Center the album cover
+                art_x = (self.width - self.art_size) // 2
+                art_y = (self.height - self.art_size) // 2 - 10  # Slight upward offset for progress bar
+                img.paste(art, (art_x, art_y))
 
         self._write_to_fb(img)
 
