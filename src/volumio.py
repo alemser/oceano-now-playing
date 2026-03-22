@@ -2,16 +2,21 @@ import json
 import logging
 import time
 from websocket import create_connection
+from media_player import MediaPlayer
 
 logger = logging.getLogger(__name__)
 
-class VolumioClient:
-    def __init__(self, url):
+class VolumioClient(MediaPlayer):
+    def __init__(self, url: str) -> None:
         self.url = url
         self.ws = None
 
-    def connect(self):
-        """Connects to Volumio's WebSocket."""
+    def connect(self) -> bool:
+        """Connects to Volumio's WebSocket.
+
+        Returns:
+            True if connection was successful, False otherwise.
+        """
         try:
             self.ws = create_connection(self.url, timeout=10)
             self.ws.send('42["getState"]')
@@ -20,7 +25,7 @@ class VolumioClient:
             logger.error(f"Error connecting to Volumio at {self.url}: {e}")
             return False
 
-    def get_state(self):
+    def get_state(self) -> None:
         """Requests the current state explicitly."""
         if self.ws:
             try:
@@ -29,8 +34,16 @@ class VolumioClient:
                 logger.error(f"Error requesting state from Volumio: {e}")
                 self.ws = None
 
-    def receive_message(self, timeout=1.0):
-        """Receives and processes WebSocket messages."""
+    def receive_message(self, timeout: float = 1.0) -> dict | None:
+        """Receives and processes WebSocket messages.
+
+        Args:
+            timeout: Maximum seconds to wait for a message.
+
+        Returns:
+            A state dictionary when a new playback state is available,
+            or None if no message arrived within the timeout.
+        """
         if not self.ws:
             return None
 
@@ -55,11 +68,15 @@ class VolumioClient:
             pass
         return None
 
-    def is_connected(self):
-        """Checks if the connection is active."""
+    def is_connected(self) -> bool:
+        """Checks if the connection is active.
+
+        Returns:
+            True if the connection is active, False otherwise.
+        """
         return self.ws is not None
 
-    def close(self):
+    def close(self) -> None:
         """Closes the connection."""
         if self.ws:
             self.ws.close()

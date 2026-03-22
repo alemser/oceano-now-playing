@@ -5,6 +5,7 @@ import signal
 import sys
 import logging
 from renderer import Renderer
+from media_player import MediaPlayer
 from volumio import VolumioClient
 
 # --- LOGGING CONFIGURATION ---
@@ -16,6 +17,8 @@ WIDTH, HEIGHT = 480, 320
 FB_DEVICE = os.getenv("FB_DEVICE", "/dev/fb0")
 VOLUMIO_URL = os.getenv("VOLUMIO_URL", "ws://localhost:3000/socket.io/?EIO=3&transport=websocket")
 COLOR_FORMAT = os.getenv("COLOR_FORMAT", "RGB565")
+# Select which media player OS to use: ``volumio`` (default), ``moode``, ``picore``
+MEDIA_PLAYER_TYPE = os.getenv("MEDIA_PLAYER", "volumio")
 
 CYCLE_TIME = 30
 # Standby time in seconds (default: 600 = 10 minutes)
@@ -37,6 +40,39 @@ is_showing_idle = False    # Tracks if idle screen is currently displayed
 # Global objects
 renderer = None
 volumio = None
+
+def detect_media_player() -> MediaPlayer:
+    """Detect and instantiate the correct media player client.
+
+    Reads the ``MEDIA_PLAYER`` environment variable (default: ``volumio``)
+    and returns the appropriate :class:`MediaPlayer` implementation.
+
+    Supported values:
+        - ``volumio``  — Volumio (default)
+        - ``moode``    — MoOde Audio
+        - ``picore``   — piCorePlayer / LMS
+
+    Returns:
+        A concrete :class:`MediaPlayer` instance ready to be connected.
+    """
+    player_type = MEDIA_PLAYER_TYPE.lower()
+    logger.info(f"Media player type: '{player_type}'")
+
+    if player_type == 'moode':
+        from moode import MoodeClient
+        url = os.getenv("MOODE_URL", "ws://localhost/moode")
+        logger.info(f"Using MoOde client at {url}")
+        return MoodeClient(url)
+
+    if player_type == 'picore':
+        from picore_player import PiCorePlayerClient
+        url = os.getenv("LMS_URL", "ws://localhost:9000")
+        logger.info(f"Using piCorePlayer client at {url}")
+        return PiCorePlayerClient(url)
+
+    # Default: Volumio
+    logger.info(f"Using Volumio client at {VOLUMIO_URL}")
+    return VolumioClient(VOLUMIO_URL)
 
 def states_are_equal(s1, s2):
     """Compares two states to see if visible fields have changed."""
@@ -103,7 +139,7 @@ def main():
         pass
 
     renderer = Renderer(WIDTH, HEIGHT, FB_DEVICE, COLOR_FORMAT, volumio_host=volumio_host)
-    volumio = VolumioClient(VOLUMIO_URL)
+    volumio = detect_media_player()
     
     # Disable the blinking cursor on the framebuffer console
     disable_cursor()
@@ -120,7 +156,7 @@ def main():
 
     while True:
         try:
-            logger.info(f"Connecting to Volumio at {VOLUMIO_URL}...")
+            logger.info(f"Connecting to media player ({MEDIA_PLAYER_TYPE})...")
             if not volumio.connect():
                 time.sleep(5)
                 continue
