@@ -6,12 +6,16 @@ a Raspberry Pi-based music player OS (https://moodeaudio.org).
 MoOde exposes playback state via HTTP API endpoint `/engine-mpd.php`.
 This implementation uses polling to fetch playback state at regular intervals,
 maintaining the same MediaPlayer interface as other clients (Volumio, piCorePlayer).
+
+Supports both MPD playback and AirPlay streaming via shairport-sync.
 """
 
+import os
 import time
 import json
 import logging
 import requests
+import subprocess
 from urllib.parse import urlparse
 from media_player import MediaPlayer
 
@@ -24,6 +28,9 @@ MOODE_DEFAULT_URL = "http://localhost/engine-mpd.php"
 # Main loop may call receive_message() frequently (~10 times/second with 0.1s timeout),
 # but we throttle actual HTTP requests to this interval.
 MIN_POLL_INTERVAL = 1.0
+
+# Shairport-sync metadata file location (AirPlay)
+SHAIRPORT_METADATA_FILE = "/tmp/shairport-sync-metadata"
 
 
 class MoodeClient(MediaPlayer):
@@ -61,6 +68,40 @@ class MoodeClient(MediaPlayer):
         """
         parsed = urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}"
+
+    def _is_airplay_active(self) -> bool:
+        """Check if shairport-sync (AirPlay) is currently streaming audio.
+
+        Detects active AirPlay playback by checking ALSA playback status
+        on the USB audio device.
+
+        Returns:
+            True if audio is actively playing via AirPlay, False otherwise.
+        """
+        try:
+            # Check if shairport-sync process is running
+            result = subprocess.run(
+                ["pgrep", "-f", "shairport-sync"],
+                capture_output=True,
+                timeout=1
+            )
+            if result.returncode != 0:
+                return False  # shairport-sync not running
+
+            # Check ALSA stream status for USB audio device
+            # Look for "Status: Running" in card0/stream0
+            try:
+                with open("/proc/asound/card0/stream0", "r") as f:
+                    content = f.read()
+                    if "Status: Running" in content:
+                        return True
+            except (FileNotFoundError, IOError):
+                pass
+
+            return False
+        except Exception as e:
+            logger.debug(f"Error checking AirPlay status: {e}")
+            return False
 
     def connect(self) -> bool:
         """Test connection to MoOde HTTP API.
@@ -169,6 +210,12 @@ class MoodeClient(MediaPlayer):
         status = raw_state.get("state", "stop")
         if status not in ["play", "pause", "stop"]:
             status = "stop"
+
+        # Override status if AirPlay is actively streaming
+        # (MPD reports "stop" when playing via AirPlay, not its queue)
+        if status == "stop" and self._is_airplay_active():
+            logger.debug("AirPlay streaming detected, overriding MPD 'stop' status to 'play'")
+            status = "play"
 
         # Build album artwork URL (relative path needs base URL)
         coverurl = raw_state.get("coverurl")
