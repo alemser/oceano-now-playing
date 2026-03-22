@@ -250,7 +250,7 @@ class TestModeAlternation:
         CYCLE_TIME = 30  # seconds
         
         current_time = 0.0
-        last_cycle_time = 0.0
+        last_cycle_time = -CYCLE_TIME  # Initialize so first check at t=0 will trigger
         show_capa = False
         toggle_count = 0
         

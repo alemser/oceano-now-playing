@@ -152,19 +152,21 @@ def volumio_websocket_message_heartbeat_response():
 @pytest.fixture
 def mock_volumio_client(mock_websocket, monkeypatch):
     """Provide a VolumioClient with mocked WebSocket."""
+    import importlib
+    
     # Create a mock websocket module
-    class MockWebSocketModule:
-        class WebSocketException(Exception):
-            pass
-        
-        @staticmethod
-        def create_connection(*args, **kwargs):
-            return mock_websocket
+    mock_ws_module = MagicMock()
+    mock_ws_module.create_connection = MagicMock(return_value=mock_websocket)
+    mock_ws_module.WebSocketException = Exception
     
-    # Inject mock websocket module before importing VolumioClient
-    monkeypatch.setitem(sys.modules, 'websocket', MockWebSocketModule())
+    # Inject mock websocket module BEFORE any import
+    monkeypatch.setitem(sys.modules, 'websocket', mock_ws_module)
     
-    # Now we can import VolumioClient
+    # Remove volumio from cache to force reimport with mocked websocket
+    if 'volumio' in sys.modules:
+        del sys.modules['volumio']
+    
+    # Now import VolumioClient - it will use the mocked websocket
     from volumio import VolumioClient
     
     client = VolumioClient('ws://localhost:3000/socket.io/?EIO=3&transport=websocket')
