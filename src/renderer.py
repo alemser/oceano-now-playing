@@ -9,6 +9,45 @@ from PIL import Image, ImageDraw, ImageFont, ImageStat
 
 logger = logging.getLogger(__name__)
 
+class Backlight:
+    """Controls display backlight brightness."""
+    def __init__(self):
+        self.brightness_path = None
+        self.max_brightness = 255
+        self._find_backlight()
+    
+    def _find_backlight(self):
+        """Finds the backlight sysfs interface."""
+        backlight_paths = [
+            '/sys/class/backlight/rpi_backlight',
+            '/sys/class/backlight/pwmchip0',
+            '/sys/class/backlight/backlight',
+        ]
+        for path in backlight_paths:
+            if os.path.exists(f'{path}/brightness'):
+                self.brightness_path = f'{path}/brightness'
+                # Get max brightness
+                try:
+                    with open(f'{path}/max_brightness', 'r') as f:
+                        self.max_brightness = int(f.read().strip())
+                except:
+                    self.max_brightness = 255
+                logger.info(f"Backlight found at {path}, max brightness: {self.max_brightness}")
+                return
+    
+    def set_brightness(self, level):
+        """Sets brightness level (0-255 scale)."""
+        if not self.brightness_path:
+            return
+        
+        # Scale level from 0-255 to 0-max_brightness
+        scaled_level = int((level / 255.0) * self.max_brightness)
+        try:
+            with open(self.brightness_path, 'w') as f:
+                f.write(str(scaled_level))
+        except Exception as e:
+            logger.warning(f"Could not set backlight: {e}")
+
 class Renderer:
     def __init__(self, width=480, height=320, fb_device="/dev/fb0", color_format="RGB565", volumio_host="localhost"):
         self.width = width
@@ -23,6 +62,9 @@ class Renderer:
         
         # Default accent color (Volumio green)
         self.default_accent = (60, 180, 60)
+        
+        # Backlight control
+        self.backlight = Backlight()
         
         # Try to open the framebuffer once
         self._open_fb()
@@ -66,6 +108,9 @@ class Renderer:
 
     def clear(self, use_fsync=True):
         """Clears the framebuffer by filling the entire device with zeros."""
+        # Reduce brightness to minimum for standby
+        self.backlight.set_brightness(5)
+        
         try:
             if not self.fb_handle:
                 self._open_fb()
@@ -159,6 +204,9 @@ class Renderer:
 
     def render_idle_screen(self):
         """Renders a stylized grayscale logo for the idle/startup state."""
+        # Reduce brightness for idle screen
+        self.backlight.set_brightness(30)
+        
         img = Image.new('RGB', (self.width, self.height), color=(10, 10, 10))
         draw = ImageDraw.Draw(img)
         
@@ -203,6 +251,9 @@ class Renderer:
         if not data:
             return
 
+        # Restore brightness for music playback
+        self.backlight.set_brightness(255)
+        
         # Ensure framebuffer is open
         if not self.fb_handle:
             logger.info("Framebuffer handle was closed, re-opening.")
