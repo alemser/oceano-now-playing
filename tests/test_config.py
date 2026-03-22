@@ -52,9 +52,9 @@ def test_config_env_FB_DEVICE(monkeypatch):
 
 def test_config_env_COLOR_FORMAT(monkeypatch):
     """Config loads COLOR_FORMAT from environment."""
-    monkeypatch.setenv("COLOR_FORMAT", "RGB888")
+    monkeypatch.setenv("COLOR_FORMAT", "BGR565")
     cfg = Config()
-    assert cfg.color_format == "RGB888"
+    assert cfg.color_format == "BGR565"
 
 
 def test_config_env_MEDIA_PLAYER(monkeypatch):
@@ -159,4 +159,36 @@ def test_config_validate_moode():
     """Config.validate() accepts moode as valid media_player_type."""
     cfg = Config()
     cfg.media_player_type = "moode"
+    cfg.validate()  # Should not raise
+
+
+def test_config_validate_color_format_rgb565():
+    """Config.validate() accepts RGB565 (default color format)."""
+    cfg = Config()
+    assert cfg.color_format == "RGB565"
+    cfg.validate()  # Should not raise
+
+
+def test_config_validate_color_format_bgr565():
+    """Config.validate() accepts BGR565 as valid color format."""
+    cfg = Config()
+    cfg.color_format = "BGR565"
+    cfg.validate()  # Should not raise
+
+
+def test_config_validate_color_format_invalid():
+    """Config.validate() rejects unsupported color formats."""
+    cfg = Config()
+    cfg.color_format = "RGB888"
+    with pytest.raises(ValueError, match="color_format must be one of"):
+        cfg.validate()
+
+
+def test_config_validate_color_format_case_insensitive():
+    """Config.validate() accepts color_format in any case."""
+    cfg = Config()
+    cfg.color_format = "bgr565"
+    cfg.validate()  # Should not raise
+    
+    cfg.color_format = "Rgb565"
     cfg.validate()  # Should not raise

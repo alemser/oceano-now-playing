@@ -38,16 +38,23 @@ class Config:
     standby_timeout: int = 600  # seconds before display sleeps (10 min)
 
     def __post_init__(self) -> None:
-        """Load environment variables and validate.
+        """Load environment variable overrides.
         
-        Environment variables override the defaults:
-        - FB_DEVICE: framebuffer device path
-        - COLOR_FORMAT: RGB565 or other PIL format
-        - MEDIA_PLAYER: volumio, moode, or picore
+        Parses and applies environment variable overrides for all settings.
+        Note: Validation is not performed here; call validate() explicitly
+        after initialization to check all values.
+        
+        Environment variables (with defaults):
+        - FB_DEVICE: framebuffer device path (default: /dev/fb0)
+        - COLOR_FORMAT: RGB565 or BGR565 (default: RGB565)
+        - MEDIA_PLAYER: volumio, moode, or picore (default: volumio)
         - VOLUMIO_URL: WebSocket URL for Volumio
         - MOODE_URL: WebSocket URL for MoOde
         - LMS_URL: WebSocket URL for piCorePlayer/LMS
-        - STANDBY_TIMEOUT: display sleep timeout in seconds
+        - STANDBY_TIMEOUT: display sleep timeout in seconds (default: 600)
+        
+        Raises:
+            ValueError: If STANDBY_TIMEOUT cannot be parsed as an integer.
         """
         # Load environment overrides
         self.framebuffer_device = os.getenv(
@@ -99,6 +106,14 @@ class Config:
             raise ValueError(
                 f"media_player_type must be one of {valid_players}, "
                 f"got '{self.media_player_type}'"
+            )
+
+        # Color format (only RGB565 and BGR565 are supported)
+        valid_formats = ("rgb565", "bgr565")
+        if self.color_format.lower() not in valid_formats:
+            raise ValueError(
+                f"color_format must be one of {valid_formats}, "
+                f"got '{self.color_format}'"
             )
 
         # Framebuffer device
