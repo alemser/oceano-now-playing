@@ -152,12 +152,20 @@ def volumio_websocket_message_heartbeat_response():
 @pytest.fixture
 def mock_volumio_client(mock_websocket, monkeypatch):
     """Provide a VolumioClient with mocked WebSocket."""
+    # Create a mock websocket module
+    class MockWebSocketModule:
+        class WebSocketException(Exception):
+            pass
+        
+        @staticmethod
+        def create_connection(*args, **kwargs):
+            return mock_websocket
+    
+    # Inject mock websocket module before importing VolumioClient
+    monkeypatch.setitem(sys.modules, 'websocket', MockWebSocketModule())
+    
+    # Now we can import VolumioClient
     from volumio import VolumioClient
-    
-    def mock_create_connection(*args, **kwargs):
-        return mock_websocket
-    
-    monkeypatch.setattr('websocket.create_connection', mock_create_connection)
     
     client = VolumioClient('ws://localhost:3000/socket.io/?EIO=3&transport=websocket')
     client.connect()

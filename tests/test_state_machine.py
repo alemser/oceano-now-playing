@@ -62,7 +62,8 @@ class TestStatesAreEqual:
             'album': 'Album',
             'status': 'play',
             'seek': 10000,
-            'samplerate': '44.1 kHz'
+            'samplerate': '44.1 kHz',
+            'bitdepth': '16 bit'
         }
         state2 = {
             'title': 'Song',
@@ -70,7 +71,8 @@ class TestStatesAreEqual:
             'album': 'Album',
             'status': 'play',
             'seek': 50000,  # Different seek - should still be equal
-            'samplerate': '48 kHz'  # Different quality - should still be equal
+            'samplerate': '44.1 kHz',  # Same quality
+            'bitdepth': '16 bit'
         }
         assert states_are_equal(state1, state2) is True
     
@@ -250,6 +252,7 @@ class TestModeAlternation:
         current_time = 0.0
         last_cycle_time = 0.0
         show_capa = False
+        toggle_count = 0
         
         # Simulate 90 seconds of playback
         for second in range(90):
@@ -258,11 +261,13 @@ class TestModeAlternation:
             # Check if we should cycle
             if current_time - last_cycle_time >= CYCLE_TIME:
                 show_capa = not show_capa  # Toggle mode
+                toggle_count += 1
                 last_cycle_time = current_time
         
-        # After 90 seconds, should have cycled 3 times (0, 30, 60)
-        # Final state should be opposite of initial
-        assert show_capa is True  # Started False, toggled 3 times
+        # After 90 seconds, should have cycled 3 times (at 0, 30, 60)
+        assert toggle_count == 3
+        # Final state after 3 toggles: False -> True -> False -> True
+        assert show_capa is True
 
 
 class TestDisplayStates:

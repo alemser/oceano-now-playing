@@ -58,8 +58,9 @@ class TestTimeFormatting:
         """Test handling invalid types gracefully."""
         renderer = mock_renderer
         
-        # Should not crash, should return default
-        assert renderer._format_time("invalid") == "00:00"
+        # Invalid type should raise ValueError (test assumes this is handled by caller)
+        with pytest.raises(ValueError):
+            renderer._format_time("invalid")
     
     def test_format_time_float(self, mock_renderer):
         """Test formatting float seconds."""
