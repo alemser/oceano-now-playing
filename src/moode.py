@@ -125,39 +125,41 @@ class MoodeClient(MediaPlayer):
             return False
 
     def _check_metadata_file_active(self) -> bool:
-        """Check if shairport-sync metadata file exists and was recently updated.
+        """Check if shairport-sync metadata FIFO exists and is accessible.
         
-        A recently modified metadata file indicates active streaming (metadata
-        updates happen when songs change or stream starts).
+        Note: Shairport-sync writes metadata to a FIFO (named pipe), not a regular file.
+        We can only verify the FIFO exists; mtime checks don't work reliably on FIFOs
+        since they report the creation time, not the last-write time.
         
         Returns:
-            True if metadata file exists and was updated in last 30 seconds.
+            True if metadata FIFO exists and is readable.
         """
         try:
             if not os.path.exists(SHAIRPORT_METADATA_FILE):
-                logger.debug(f"Metadata file not found: {SHAIRPORT_METADATA_FILE}")
+                logger.debug(f"Metadata FIFO not found: {SHAIRPORT_METADATA_FILE}")
                 return False
             
-            mtime = os.path.getmtime(SHAIRPORT_METADATA_FILE)
-            age_seconds = time.time() - mtime
-            
-            # File updated in last 30 seconds = likely active streaming
-            is_active = age_seconds < 30
-            logger.debug(f"Metadata file age: {age_seconds:.1f}s ({'active' if is_active else 'stale'})")
-            return is_active
+            # FIFO exists; consider it potentially active if it's a FIFO/pipe
+            mode = os.stat(SHAIRPORT_METADATA_FILE).st_mode
+            is_fifo = os.path.isfifo(SHAIRPORT_METADATA_FILE)
+            logger.debug(f"Metadata FIFO exists (is_fifo={is_fifo})")
+            return is_fifo
         except Exception as e:
-            logger.debug(f"Error checking metadata file: {e}")
+            logger.debug(f"Error checking metadata FIFO: {e}")
             return False
 
     def _is_streaming_renderer_active(self) -> bool:
         """Detect if audio is streaming from shairport-sync (AirPlay).
         
-        Uses multi-layered detection specifically for AirPlay via shairport-sync:
+        Uses dual-layer detection specifically for AirPlay via shairport-sync:
         1. Shairport-sync process is running (necessary condition for AirPlay)
         2. ALSA shows active audio playback (hardware-level confirmation)
-        3. Metadata file is being updated (software-level confirmation of active stream)
         
-        Requires 2 of 3 indicators for high-confidence detection.
+        Both indicators must be true for confident detection. This avoids false
+        positives from shairport running idle and false negatives from ALSA glitches.
+        
+        Note: Metadata file (FIFO) can't be reliably checked for freshness since
+        mtime reports creation time, not last-write time. We rely on the other two.
         
         Note: This detects AirPlay/shairport-sync streaming. Bluetooth and UPnP
         streams use different mechanisms (BlueZ, UPnP renderers) not covered here.
@@ -166,18 +168,15 @@ class MoodeClient(MediaPlayer):
         Returns:
             True if AirPlay streaming via shairport-sync is detected, False otherwise.
         """
-        logger.debug("--- Streaming Renderer Detection ---")
+        logger.info("=== Streaming Renderer Detection ===")
         shairport_running = self._check_shairport_running()
         alsa_active = self._check_alsa_audio_active()
-        metadata_active = self._check_metadata_file_active()
         
-        # Need at least 2 indicators to be confident
-        # (shairport might run idle, metadata might be stale, ALSA might glitch)
-        indicators = sum([shairport_running, alsa_active, metadata_active])
-        is_active = indicators >= 2
+        # Both must be true: shairport running AND ALSA showing audio
+        # (Avoids false positives from idle shairport, false negatives from ALSA glitch)
+        is_active = shairport_running and alsa_active
         
-        logger.debug(f"Indicators: shairport={shairport_running}, alsa={alsa_active}, "
-                    f"metadata={metadata_active} (score={indicators}/3) => {is_active}")
+        logger.info(f"Indicators: shairport={shairport_running}, alsa={alsa_active} => {is_active}")
         
         return is_active
 
@@ -385,23 +384,23 @@ class MoodeClient(MediaPlayer):
         airplay_metadata = None
         
         if status == "stop":
-            logger.debug("MPD status is 'stop', checking for active streaming renderer...")
+            logger.info("MPD status is 'stop', checking for active streaming renderer...")
             
             # Use multi-layered detection
             streaming_active = self._is_streaming_renderer_active()
             
             if streaming_active:
-                logger.debug("✓ Streaming renderer detected, overriding status: stop -> play")
+                logger.info("✓ Streaming renderer detected, overriding status: stop -> play")
                 status = "play"
                 
                 # Try to get metadata from the streaming source
                 airplay_metadata = self._get_airplay_metadata()
                 if airplay_metadata:
-                    logger.debug(f"✓ Using streaming metadata: {airplay_metadata}")
+                    logger.info(f"✓ Using streaming metadata: {airplay_metadata}")
                 else:
-                    logger.debug("⚠ Streaming detected but no metadata available yet")
+                    logger.info("⚠ Streaming detected but no metadata available yet")
             else:
-                logger.debug("✗ No streaming renderer detected, keeping status as stop")
+                logger.info("✗ No streaming renderer detected, keeping status as stop")
 
         # Build album artwork URL (relative path needs base URL)
         coverurl = raw_state.get("coverurl")
