@@ -38,7 +38,7 @@ def test_config_defaults():
     assert cfg.display_height == 320
     assert cfg.framebuffer_device == "/dev/fb0"
     assert cfg.color_format == "RGB565"
-    assert cfg.media_player_type == "volumio"
+    assert cfg.media_player_type == "auto"
     assert cfg.mode_cycle_time == 30
     assert cfg.standby_timeout == 600
 
