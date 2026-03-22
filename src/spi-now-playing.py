@@ -3,6 +3,7 @@ import time
 import signal
 import sys
 import logging
+import threading
 from urllib.parse import urlparse
 from renderer import Renderer
 from media_player import MediaPlayer
@@ -31,25 +32,174 @@ config = None
 renderer = None
 volumio = None
 
+
+def _connect_with_timeout(client: MediaPlayer, timeout: float = 3.0) -> bool:
+    """Connect to a media player with enforced timeout.
+
+    Uses threading to enforce a hard timeout on the connect() call, preventing
+    long blocking waits if a service is not responding (e.g., 10s WebSocket
+    timeout on Volumio when the service is down).
+
+    Args:
+        client: The MediaPlayer instance to connect.
+        timeout: Maximum seconds to wait for connection. Defaults to 3 seconds.
+
+    Returns:
+        True if connection succeeded within the timeout, False otherwise.
+    """
+    result = {"connected": False}
+
+    def connect_thread():
+        try:
+            result["connected"] = client.connect()
+        except Exception as e:
+            logger.debug(f"Connect thread exception: {e}")
+            result["connected"] = False
+
+    thread = threading.Thread(target=connect_thread, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout)
+
+    # If thread is still alive, the connect() call exceeded the timeout
+    if thread.is_alive():
+        logger.debug(f"Connect timed out after {timeout}s")
+        return False
+
+    return result["connected"]
+
+
+def auto_detect_media_player(cfg: Config) -> MediaPlayer:
+    """Auto-detect and instantiate the correct media player client.
+
+    Attempts to connect to each supported media player in sequence with a
+    timeout. Returns the first player that responds successfully.
+
+    Currently only Volumio is auto-detected via WebSocket probing. MoOde and
+    piCorePlayer stubs are not included in auto-detection until their connect()
+    methods are implemented.
+
+    Probing order:
+        1. Volumio (ws://localhost:3000)
+
+    Args:
+        cfg: Configuration object with media player URLs.
+
+    Returns:
+        A concrete :class:`MediaPlayer` instance with probe connection closed,
+        ready to be connected again in main(), or VolumioClient as fallback
+        if detection fails.
+
+    Note:
+        Each probe has a 3-second timeout. Future implementations of MoOde and
+        piCorePlayer clients can be added to the candidates list once their
+        connect() methods are functional.
+    """
+    logger.info("Auto-detecting media player...")
+    
+    # Only Volumio is currently implemented for auto-detection.
+    # MoOde and piCorePlayer clients are stubs (connect() returns False),
+    # so they are omitted from the candidates list to avoid wasting time
+    # probing services that can never be detected until their implementations
+    # are completed.
+    candidates = [
+        ('volumio', cfg.volumio_url, VolumioClient),
+        # TODO: Add MoOde once MoodeClient.connect() is implemented
+        # TODO: Add piCorePlayer once PiCorePlayerClient.connect() is implemented
+    ]
+    
+    for name, url, client_factory in candidates:
+        try:
+            logger.info(f"Probing {name} at {url}...")
+            client = client_factory(url)
+            
+            # Try to connect with 3-second timeout
+            if _connect_with_timeout(client, timeout=3.0):
+                logger.info(f"✓ Auto-detected: {name.upper()} is running")
+                
+                # Close the probe connection so the caller can establish
+                # a single long-lived connection later without leaking sockets.
+                try:
+                    disconnect_fn = getattr(client, "disconnect", None)
+                    if callable(disconnect_fn):
+                        disconnect_fn()
+                    else:
+                        # Fallback: close underlying WebSocket if exposed
+                        ws = getattr(client, "ws", None)
+                        if ws is not None:
+                            try:
+                                ws.close()
+                            finally:
+                                setattr(client, "ws", None)
+                except Exception as disconnect_error:
+                    logger.debug(
+                        f"Failed to close probe connection for {name}: "
+                        f"{disconnect_error}"
+                    )
+                
+                return client
+            else:
+                logger.info(f"✗ {name} returned False (not running)")
+        except Exception as e:
+            logger.debug(f"✗ {name} probe failed: {e}")
+    
+    # Fallback: use Volumio as default
+    logger.warning("No media player detected. Falling back to Volumio.")
+    return VolumioClient(cfg.volumio_url)
+
+
 def detect_media_player(cfg: Config) -> MediaPlayer:
     """Detect and instantiate the correct media player client.
 
-    Reads the ``MEDIA_PLAYER`` configuration setting and returns the
-    appropriate :class:`MediaPlayer` implementation.
+    If MEDIA_PLAYER is set to 'auto', attempts auto-detection by probing
+    Volumio. Otherwise uses the explicitly configured player.
 
     Args:
         cfg: Configuration object specifying which media player to use.
 
-    Supported values:
-        - ``volumio``  — Volumio (default)
+    Supported values for MEDIA_PLAYER:
+        - ``auto``     — Auto-detect (probe Volumio only; MoOde/piCore need implementation)
+        - ``volumio``  — Volumio (default if not set)
         - ``moode``    — MoOde Audio
         - ``picore``   — piCorePlayer / LMS
 
     Returns:
         A concrete :class:`MediaPlayer` instance ready to be connected.
+        On auto-detection, updates cfg.media_player_type with the detected value.
     """
     player_type = cfg.media_player_type
     logger.info(f"Media player type: '{player_type}'")
+
+    if player_type == 'auto':
+        client = auto_detect_media_player(cfg)
+        # Infer the detected player type from the concrete client instance
+        # so downstream logic that branches on cfg.media_player_type sees
+        # a concrete value instead of 'auto'.
+        try:
+            from moode import MoodeClient
+        except ImportError:
+            MoodeClient = None  # type: ignore[assignment]
+        try:
+            from picore_player import PiCorePlayerClient
+        except ImportError:
+            PiCorePlayerClient = None  # type: ignore[assignment]
+        
+        detected_type: str | None = None
+        if isinstance(client, VolumioClient):
+            detected_type = 'volumio'
+        elif MoodeClient is not None and isinstance(client, MoodeClient):
+            detected_type = 'moode'
+        elif PiCorePlayerClient is not None and isinstance(client, PiCorePlayerClient):
+            detected_type = 'picore'
+        
+        if detected_type is not None:
+            cfg.media_player_type = detected_type
+            logger.info(f"Auto-detected media player type: {detected_type}")
+        else:
+            logger.warning(
+                "Auto-detected media player client of unknown type; "
+                "leaving cfg.media_player_type as 'auto'."
+            )
+        return client
 
     if player_type == 'moode':
         from moode import MoodeClient

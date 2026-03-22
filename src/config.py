@@ -47,7 +47,7 @@ class Config:
         Environment variables (with defaults):
         - FB_DEVICE: framebuffer device path (default: /dev/fb0)
         - COLOR_FORMAT: RGB565 or BGR565 (default: RGB565)
-        - MEDIA_PLAYER: volumio, moode, or picore (default: volumio)
+        - MEDIA_PLAYER: auto, volumio, moode, or picore (default: volumio)
         - VOLUMIO_URL: WebSocket URL for Volumio
         - MOODE_URL: WebSocket URL for MoOde
         - LMS_URL: WebSocket URL for piCorePlayer/LMS
@@ -101,7 +101,7 @@ class Config:
             )
 
         # Media player type
-        valid_players = ("volumio", "moode", "picore")
+        valid_players = ("auto", "volumio", "moode", "picore")
         if self.media_player_type not in valid_players:
             raise ValueError(
                 f"media_player_type must be one of {valid_players}, "

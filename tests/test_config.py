@@ -192,3 +192,17 @@ def test_config_validate_color_format_case_insensitive():
     
     cfg.color_format = "Rgb565"
     cfg.validate()  # Should not raise
+
+
+def test_config_validate_media_player_auto():
+    """Config.validate() accepts 'auto' as valid media_player_type."""
+    cfg = Config()
+    cfg.media_player_type = "auto"
+    cfg.validate()  # Should not raise
+
+
+def test_config_env_MEDIA_PLAYER_auto(monkeypatch):
+    """Config loads MEDIA_PLAYER=auto from environment."""
+    monkeypatch.setenv("MEDIA_PLAYER", "auto")
+    cfg = Config()
+    assert cfg.media_player_type == "auto"
