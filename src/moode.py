@@ -7,7 +7,8 @@ MoOde exposes playback state via HTTP API endpoint `/engine-mpd.php`.
 This implementation uses polling to fetch playback state at regular intervals,
 maintaining the same MediaPlayer interface as other clients (Volumio, piCorePlayer).
 
-Supports both MPD playback and AirPlay streaming via shairport-sync.
+Supports both MPD playback and AirPlay streaming via shairport-sync, Bluetooth, UPnP, etc.
+Uses multi-layered detection strategy for streaming renderer detection.
 """
 
 import os
@@ -31,6 +32,9 @@ MIN_POLL_INTERVAL = 1.0
 
 # Shairport-sync metadata file location (AirPlay)
 SHAIRPORT_METADATA_FILE = "/tmp/shairport-sync-metadata"
+
+# Metadata file cache: track last modification time to detect updates
+_METADATA_CACHE = {"mtime": 0, "data": None}
 
 
 class MoodeClient(MediaPlayer):
@@ -69,45 +73,123 @@ class MoodeClient(MediaPlayer):
         parsed = urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}"
 
-    def _is_airplay_active(self) -> bool:
-        """Check if shairport-sync (AirPlay) is currently streaming audio.
-
-        Detects active AirPlay playback by checking ALSA playback status
-        on the USB audio device.
-
+    def _check_shairport_running(self) -> bool:
+        """Check if shairport-sync process is running.
+        
         Returns:
-            True if audio is actively playing via AirPlay, False otherwise.
+            True if process is found, False otherwise.
         """
         try:
-            # Check if shairport-sync process is running
             result = subprocess.run(
                 ["pgrep", "-f", "shairport-sync"],
                 capture_output=True,
                 timeout=1
             )
-            if result.returncode != 0:
-                return False  # shairport-sync not running
+            is_running = result.returncode == 0
+            logger.debug(f"Shairport-sync process check: {'running' if is_running else 'not found'}")
+            return is_running
+        except Exception as e:
+            logger.debug(f"Error checking shairport-sync process: {e}")
+            return False
 
-            # Check ALSA stream status for USB audio device
-            # Look for "Status: Running" in card0/stream0
-            try:
-                with open("/proc/asound/card0/stream0", "r") as f:
-                    content = f.read()
-                    if "Status: Running" in content:
-                        return True
-            except (FileNotFoundError, IOError):
-                pass
-
+    def _check_alsa_audio_active(self) -> bool:
+        """Check if ALSA is actively playing audio.
+        
+        Looks for "Status: Running" in ALSA stream information, which indicates
+        active audio playback at the hardware level (device-independent).
+        
+        Returns:
+            True if audio is actively playing, False otherwise.
+        """
+        try:
+            # Try multiple ALSA card/stream combinations to handle different devices
+            for card in range(5):  # Check cards 0-4
+                for stream in range(2):  # Playback (0) and Capture (1)
+                    path = f"/proc/asound/card{card}/stream{stream}"
+                    if not os.path.exists(path):
+                        continue
+                    
+                    try:
+                        with open(path, "r") as f:
+                            content = f.read()
+                            if "Status: Running" in content:
+                                logger.debug(f"ALSA audio active on card{card}/stream{stream}")
+                                return True
+                    except (IOError, OSError):
+                        continue
+            
+            logger.debug("ALSA: no active audio streams detected")
             return False
         except Exception as e:
-            logger.debug(f"Error checking AirPlay status: {e}")
+            logger.debug(f"Error checking ALSA status: {e}")
             return False
 
+    def _check_metadata_file_active(self) -> bool:
+        """Check if shairport-sync metadata file exists and was recently updated.
+        
+        A recently modified metadata file indicates active streaming (metadata
+        updates happen when songs change or stream starts).
+        
+        Returns:
+            True if metadata file exists and was updated in last 30 seconds.
+        """
+        try:
+            if not os.path.exists(SHAIRPORT_METADATA_FILE):
+                logger.debug(f"Metadata file not found: {SHAIRPORT_METADATA_FILE}")
+                return False
+            
+            mtime = os.path.getmtime(SHAIRPORT_METADATA_FILE)
+            age_seconds = time.time() - mtime
+            
+            # File updated in last 30 seconds = likely active streaming
+            is_active = age_seconds < 30
+            logger.debug(f"Metadata file age: {age_seconds:.1f}s ({'active' if is_active else 'stale'})")
+            return is_active
+        except Exception as e:
+            logger.debug(f"Error checking metadata file: {e}")
+            return False
+
+    def _is_streaming_renderer_active(self) -> bool:
+        """Detect if audio is streaming from shairport-sync (AirPlay).
+        
+        Uses multi-layered detection specifically for AirPlay via shairport-sync:
+        1. Shairport-sync process is running (necessary condition for AirPlay)
+        2. ALSA shows active audio playback (hardware-level confirmation)
+        3. Metadata file is being updated (software-level confirmation of active stream)
+        
+        Requires 2 of 3 indicators for high-confidence detection.
+        
+        Note: This detects AirPlay/shairport-sync streaming. Bluetooth and UPnP
+        streams use different mechanisms (BlueZ, UPnP renderers) not covered here.
+        For MoOde, AirPlay is the primary streaming renderer of interest.
+        
+        Returns:
+            True if AirPlay streaming via shairport-sync is detected, False otherwise.
+        """
+        logger.debug("--- Streaming Renderer Detection ---")
+        shairport_running = self._check_shairport_running()
+        alsa_active = self._check_alsa_audio_active()
+        metadata_active = self._check_metadata_file_active()
+        
+        # Need at least 2 indicators to be confident
+        # (shairport might run idle, metadata might be stale, ALSA might glitch)
+        indicators = sum([shairport_running, alsa_active, metadata_active])
+        is_active = indicators >= 2
+        
+        logger.debug(f"Indicators: shairport={shairport_running}, alsa={alsa_active}, "
+                    f"metadata={metadata_active} (score={indicators}/3) => {is_active}")
+        
+        return is_active
+
     def _get_airplay_metadata(self) -> dict | None:
-        """Read metadata from shairport-sync for currently playing AirPlay stream.
+        """Read metadata from shairport-sync for currently playing stream.
 
         Shairport-sync writes metadata to /tmp/shairport-sync-metadata in a
-        special format. Parse it to extract artist, title, album, etc.
+        key=value format. This method parses it and caches the result to avoid
+        re-parsing on every call.
+
+        Supported metadata keys from shairport-sync:
+        - artist, title, album, songalbumartist, artwork
 
         Returns:
             Dictionary with parsed metadata (title, artist, album) or None
@@ -115,38 +197,72 @@ class MoodeClient(MediaPlayer):
         """
         try:
             if not os.path.exists(SHAIRPORT_METADATA_FILE):
+                logger.debug(f"Metadata file does not exist: {SHAIRPORT_METADATA_FILE}")
+                _METADATA_CACHE["data"] = None
                 return None
+
+            # Check if file was modified since last read
+            try:
+                mtime = os.path.getmtime(SHAIRPORT_METADATA_FILE)
+                if mtime == _METADATA_CACHE["mtime"] and _METADATA_CACHE["data"] is not None:
+                    # File hasn't changed, return cached data
+                    return _METADATA_CACHE["data"]
+            except OSError:
+                pass
 
             with open(SHAIRPORT_METADATA_FILE, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read().strip()
 
             if not content:
+                logger.debug("Metadata file is empty")
+                _METADATA_CACHE["data"] = None
                 return None
 
             # Parse shairport-sync metadata format: key=value pairs
             metadata = {}
+            lines_parsed = 0
             for line in content.split("\n"):
                 line = line.strip()
                 if not line or "=" not in line:
                     continue
 
-                key, value = line.split("=", 1)
-                key = key.strip().lower()
-                value = value.strip()
+                try:
+                    key, value = line.split("=", 1)
+                    key = key.strip().lower()
+                    value = value.strip()
+                    
+                    # Map shairport keys to our standard schema
+                    if key == "artist" and value:
+                        metadata["artist"] = value
+                    elif key == "title" and value:
+                        metadata["title"] = value
+                    elif key == "album" and value:
+                        metadata["album"] = value
+                    elif key == "songalbumartist" and value:
+                        metadata["albumartist"] = value
+                    
+                    lines_parsed += 1
+                except (ValueError, AttributeError) as e:
+                    logger.debug(f"Error parsing metadata line '{line}': {e}")
+                    continue
 
-                # Map shairport keys to our standard schema
-                if key == "artist":
-                    metadata["artist"] = value
-                elif key == "title":
-                    metadata["title"] = value
-                elif key == "album":
-                    metadata["album"] = value
-                elif key == "songalbumartist":
-                    metadata["albumartist"] = value
-
-            return metadata if metadata else None
+            if metadata:
+                logger.debug(f"Parsed metadata from file ({lines_parsed} lines): {metadata}")
+                # Update cache
+                try:
+                    _METADATA_CACHE["mtime"] = os.path.getmtime(SHAIRPORT_METADATA_FILE)
+                except OSError:
+                    _METADATA_CACHE["mtime"] = 0
+                _METADATA_CACHE["data"] = metadata
+                return metadata
+            else:
+                logger.debug(f"Metadata file has no valid entries ({lines_parsed} lines parsed)")
+                _METADATA_CACHE["data"] = None
+                return None
+                
         except Exception as e:
-            logger.debug(f"Error reading AirPlay metadata: {e}")
+            logger.debug(f"Error reading metadata file: {e}")
+            _METADATA_CACHE["data"] = None
             return None
 
     def connect(self) -> bool:
@@ -221,7 +337,9 @@ class MoodeClient(MediaPlayer):
         """Convert MoOde API response to standard playback state format.
 
         Maps MoOde-specific fields to the common state schema used by all
-        MediaPlayer implementations.
+        MediaPlayer implementations. Includes sophisticated handling for
+        streaming renderers (AirPlay, Bluetooth, UPnP) where MPD reports
+        "stop" because it's not managing the current playback.
 
         Args:
             raw_state: Raw JSON response from MoOde API.
@@ -229,6 +347,9 @@ class MoodeClient(MediaPlayer):
         Returns:
             Normalized state dictionary ready for display/rendering.
         """
+        logger.debug(f"_normalize_state: Processing state - status={raw_state.get('state')}, "
+                    f"title={raw_state.get('title')}, current_song_path={raw_state.get('file')}")
+        
         # Extract and convert numeric fields
         elapsed = raw_state.get("elapsed")
         seek = None
@@ -257,16 +378,30 @@ class MoodeClient(MediaPlayer):
         if status not in ["play", "pause", "stop"]:
             status = "stop"
 
-        # Override status if AirPlay is actively streaming
-        # (MPD reports "stop" when playing via AirPlay, not its queue)
+        # Detect if a streaming renderer (AirPlay, Bluetooth, UPnP) is active
+        # When streaming via renderer, MPD reports "state":"stop" because it's not
+        # managing the playback. We need to detect this and override the status.
+        streaming_active = False
         airplay_metadata = None
-        if status == "stop" and self._is_airplay_active():
-            logger.debug("AirPlay streaming detected, overriding MPD 'stop' status to 'play'")
-            status = "play"
-            # Try to get actual metadata from AirPlay stream
-            airplay_metadata = self._get_airplay_metadata()
-            if airplay_metadata:
-                logger.debug(f"Using AirPlay metadata: {airplay_metadata}")
+        
+        if status == "stop":
+            logger.debug("MPD status is 'stop', checking for active streaming renderer...")
+            
+            # Use multi-layered detection
+            streaming_active = self._is_streaming_renderer_active()
+            
+            if streaming_active:
+                logger.debug("✓ Streaming renderer detected, overriding status: stop -> play")
+                status = "play"
+                
+                # Try to get metadata from the streaming source
+                airplay_metadata = self._get_airplay_metadata()
+                if airplay_metadata:
+                    logger.debug(f"✓ Using streaming metadata: {airplay_metadata}")
+                else:
+                    logger.debug("⚠ Streaming detected but no metadata available yet")
+            else:
+                logger.debug("✗ No streaming renderer detected, keeping status as stop")
 
         # Build album artwork URL (relative path needs base URL)
         coverurl = raw_state.get("coverurl")
@@ -283,31 +418,23 @@ class MoodeClient(MediaPlayer):
         elif bitrate and bitrate != "0 bps":
             quality = bitrate
 
-        # Use AirPlay metadata if available, otherwise fall back to MPD metadata
-        if airplay_metadata:
-            return {
-                "title": airplay_metadata.get("title", ""),
-                "artist": airplay_metadata.get("artist", ""),
-                "album": airplay_metadata.get("album", ""),
-                "albumart": albumart,
-                "status": status,
-                "seek": seek,
-                "duration": duration,
-                "quality": quality,
-                "volume": int(raw_state.get("volume", 100)),
-            }
-        else:
-            return {
-                "title": raw_state.get("title", ""),
-                "artist": raw_state.get("artist", ""),
-                "album": raw_state.get("album", ""),
-                "albumart": albumart,
-                "status": status,
-                "seek": seek,
-                "duration": duration,
-                "quality": quality,
-                "volume": int(raw_state.get("volume", 100)),
-            }
+        # Use streaming metadata if available, otherwise fall back to MPD metadata
+        final_state = {
+            "title": (airplay_metadata.get("title") if airplay_metadata else None) or raw_state.get("title", ""),
+            "artist": (airplay_metadata.get("artist") if airplay_metadata else None) or raw_state.get("artist", ""),
+            "album": (airplay_metadata.get("album") if airplay_metadata else None) or raw_state.get("album", ""),
+            "albumart": albumart,
+            "status": status,
+            "seek": seek,
+            "duration": duration,
+            "quality": quality,
+            "volume": int(raw_state.get("volume", 100)),
+        }
+        
+        logger.debug(f"_normalize_state result: status={final_state['status']}, "
+                    f"title={final_state['title']}, artist={final_state['artist']}")
+        
+        return final_state
 
     def is_connected(self) -> bool:
         """Check if currently connected to MoOde.
