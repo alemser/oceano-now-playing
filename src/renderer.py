@@ -228,8 +228,15 @@ class Renderer:
         status = data.get('status', 'stop')
         
         # Progress Calculation
-        seek = data.get('seek', 0) / 1000 # ms to s
-        duration = data.get('duration', 0)
+        seek = data.get('seek', 0) or 0
+        if seek is None:
+            seek = 0
+        seek = seek / 1000  # ms to s
+        
+        duration = data.get('duration', 0) or 0
+        if duration is None:
+            duration = 0
+        
         progress = 0
         if duration > 0:
             progress = min(seek / duration, 1.0)
