@@ -28,7 +28,7 @@ class Config:
     color_format: str = "RGB565"
 
     # Media player
-    media_player_type: str = "volumio"
+    media_player_type: str = "auto"
     volumio_url: str = "ws://localhost:3000/socket.io/?EIO=3&transport=websocket"
     moode_url: str = "http://localhost/engine-mpd.php"
     lms_url: str = "ws://localhost:9000"
@@ -47,7 +47,7 @@ class Config:
         Environment variables (with defaults):
         - FB_DEVICE: framebuffer device path (default: /dev/fb0)
         - COLOR_FORMAT: RGB565 or BGR565 (default: RGB565)
-        - MEDIA_PLAYER: auto, volumio, moode, or picore (default: volumio)
+        - MEDIA_PLAYER: auto, volumio, moode, or picore (default: auto)
         - VOLUMIO_URL: WebSocket URL for Volumio
         - MOODE_URL: HTTP polling endpoint for MoOde (e.g., http://localhost/engine-mpd.php)
         - LMS_URL: WebSocket URL for piCorePlayer/LMS
