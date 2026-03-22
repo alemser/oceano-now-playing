@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from renderer import Renderer
 from media_player import MediaPlayer
 from volumio import VolumioClient
+from moode import MoodeClient
 from config import Config
 
 # --- LOGGING CONFIGURATION ---
@@ -22,8 +23,8 @@ last_active_time = time.time()
 last_cycle_time = time.time()
 last_sync_time = 0
 last_render_time = 0
-last_volumio_timestamp = 0 # Local timestamp when pushState was received
-last_volumio_seek = 0      # Seek value from Volumio at that timestamp
+last_seek_timestamp = 0 # Local timestamp when state was received
+last_known_seek = 0      # Seek value from media player at that timestamp
 is_sleeping = False
 is_showing_idle = False    # Tracks if idle screen is currently displayed
 
@@ -74,12 +75,9 @@ def auto_detect_media_player(cfg: Config) -> MediaPlayer:
     Attempts to connect to each supported media player in sequence with a
     timeout. Returns the first player that responds successfully.
 
-    Currently only Volumio is auto-detected via WebSocket probing. MoOde and
-    piCorePlayer stubs are not included in auto-detection until their connect()
-    methods are implemented.
-
     Probing order:
         1. Volumio (ws://localhost:3000)
+        2. MoOde (http://localhost/engine-mpd.php)
 
     Args:
         cfg: Configuration object with media player URLs.
@@ -90,20 +88,15 @@ def auto_detect_media_player(cfg: Config) -> MediaPlayer:
         if detection fails.
 
     Note:
-        Each probe has a 3-second timeout. Future implementations of MoOde and
-        piCorePlayer clients can be added to the candidates list once their
-        connect() methods are functional.
+        Each probe has a 3-second timeout. piCorePlayer is not included until
+        its connect() method is implemented.
     """
     logger.info("Auto-detecting media player...")
     
-    # Only Volumio is currently implemented for auto-detection.
-    # MoOde and piCorePlayer clients are stubs (connect() returns False),
-    # so they are omitted from the candidates list to avoid wasting time
-    # probing services that can never be detected until their implementations
-    # are completed.
+    # Probing order: try most responsive services first
     candidates = [
         ('volumio', cfg.volumio_url, VolumioClient),
-        # TODO: Add MoOde once MoodeClient.connect() is implemented
+        ('moode', cfg.moode_url, MoodeClient),
         # TODO: Add piCorePlayer once PiCorePlayerClient.connect() is implemented
     ]
     
@@ -151,13 +144,13 @@ def detect_media_player(cfg: Config) -> MediaPlayer:
     """Detect and instantiate the correct media player client.
 
     If MEDIA_PLAYER is set to 'auto', attempts auto-detection by probing
-    Volumio. Otherwise uses the explicitly configured player.
+    Volumio and MoOde. Otherwise uses the explicitly configured player.
 
     Args:
         cfg: Configuration object specifying which media player to use.
 
     Supported values for MEDIA_PLAYER:
-        - ``auto``     — Auto-detect (probe Volumio only; MoOde/piCore need implementation)
+        - ``auto``     — Auto-detect (probe Volumio → MoOde; piCore TBD)
         - ``volumio``  — Volumio (default if not set)
         - ``moode``    — MoOde Audio
         - ``picore``   — piCorePlayer / LMS
@@ -262,7 +255,7 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 def main():
-    global last_state, last_rendered_state, last_rendered_mode, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_volumio_timestamp, last_volumio_seek, is_sleeping, is_showing_idle, config, renderer, volumio
+    global last_state, last_rendered_state, last_rendered_mode, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_seek_timestamp, last_known_seek, is_sleeping, is_showing_idle, config, renderer, player
     
     # Initialize configuration (moved here to avoid side effects at import time)
     config = Config()
@@ -293,7 +286,7 @@ def main():
         config.framebuffer_device, config.color_format,
         volumio_host=volumio_host
     )
-    volumio = detect_media_player(config)
+    player = detect_media_player(config)
     
     # Disable the blinking cursor on the framebuffer console
     disable_cursor()
@@ -311,12 +304,12 @@ def main():
     while True:
         try:
             logger.info(f"Connecting to media player ({config.media_player_type})...")
-            if not volumio.connect():
+            if not player.connect():
                 time.sleep(5)
                 continue
             
             # Immediately request state to force a render
-            volumio.get_state()
+            player.get_state()
             last_sync_time = time.time()
             
             while True:
@@ -324,11 +317,11 @@ def main():
                 
                 # Periodic synchronization every 30 seconds
                 if now - last_sync_time > 30:
-                    volumio.get_state()
+                    player.get_state()
                     last_sync_time = now
                 
                 # Receive messages
-                new_data = volumio.receive_message(timeout=0.1)
+                new_data = player.receive_message(timeout=0.1)
                 
                 if new_data:
                     # Detect song change to reset text mode and clear art cache
@@ -346,10 +339,10 @@ def main():
                         logger.info(f"New song detected: {new_data.get('title')} - {new_data.get('artist')}. Starting in text mode.")
                     
                     # Store data for local seek interpolation
-                    last_volumio_seek = new_data.get('seek', 0)
-                    if last_volumio_seek is None:
-                        last_volumio_seek = 0
-                    last_volumio_timestamp = now
+                    last_known_seek = new_data.get('seek', 0)
+                    if last_known_seek is None:
+                        last_known_seek = 0
+                    last_seek_timestamp = now
                     
                     # Reset standby timer on ANY state change message
                     last_active_time = now
@@ -419,9 +412,9 @@ def main():
 
                 if state_changed or mode_changed or time_to_update_progress:
                     # Interpolate seek time
-                    current_seek = last_volumio_seek
+                    current_seek = last_known_seek
                     if last_state.get('status') == 'play':
-                        current_seek += int((now - last_volumio_timestamp) * 1000)
+                        current_seek += int((now - last_seek_timestamp) * 1000)
                     
                     render_data = last_state.copy()
                     render_data['seek'] = current_seek
@@ -436,8 +429,8 @@ def main():
 
         except Exception as e:
             logger.error(f"Error in connection/main loop: {e}")
-            if volumio:
-                volumio.close()
+            if player:
+                player.close()
             time.sleep(5)
 
 if __name__ == "__main__":

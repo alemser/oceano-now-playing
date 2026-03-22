@@ -11,7 +11,7 @@ This project displays Volumio's current playing status (title, artist, album, ar
 ## Installation
 
 ### 1. Enable SPI Display Framebuffer
-Ensure your display's overlay is enabled. On Volumio, add the following to `/boot/userconfig.txt`:
+Ensure your display's overlay is enabled. On Volumio, add the following to `/boot/userconfig.txt` for Volumio or `/boot/firmware/config.txt` for MoOde:
 
 ```bash
 dtparam=spi=on
