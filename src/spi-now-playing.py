@@ -31,17 +31,67 @@ config = None
 renderer = None
 volumio = None
 
-def detect_media_player(cfg: Config) -> MediaPlayer:
+def auto_detect_media_player(cfg) -> MediaPlayer:
+    """Auto-detect and instantiate the correct media player client.
+
+    Attempts to connect to each supported media player in sequence with a
+    timeout. Returns the first player that responds successfully.
+
+    Probing order (fastest to slowest typically):
+        1. Volumio (ws://localhost:3000)
+        2. MoOde (ws://localhost/moode)
+        3. piCorePlayer/LMS (ws://localhost:9000)
+
+    Args:
+        cfg: Configuration object with media player URLs.
+
+    Returns:
+        A concrete :class:`MediaPlayer` instance ready to be connected,
+        or VolumioClient as fallback if none respond.
+
+    Note:
+        Each probe has a 3-second timeout. Total worst-case time is ~9 seconds.
+    """
+    logger.info("Auto-detecting media player...")
+    
+    # Order: try fastest services first
+    candidates = [
+        ('volumio', cfg.volumio_url, VolumioClient),
+        ('moode', cfg.moode_url, lambda url: __import__('moode').MoodeClient(url)),
+        ('picore', cfg.lms_url, lambda url: __import__('picore_player').PiCorePlayerClient(url))
+    ]
+    
+    for name, url, client_factory in candidates:
+        try:
+            logger.info(f"Probing {name} at {url}...")
+            client = client_factory(url)
+            
+            # Try to connect with timeout
+            if client.connect():
+                logger.info(f"✓ Auto-detected: {name.upper()} is running")
+                return client
+            else:
+                logger.info(f"✗ {name} returned False (not running)")
+        except Exception as e:
+            logger.debug(f"✗ {name} probe failed: {e}")
+    
+    # Fallback: use Volumio as default
+    logger.warning("No media player detected. Falling back to Volumio.")
+    return VolumioClient(cfg.volumio_url)
+
+
+def detect_media_player(cfg) -> MediaPlayer:
     """Detect and instantiate the correct media player client.
 
-    Reads the ``MEDIA_PLAYER`` configuration setting and returns the
-    appropriate :class:`MediaPlayer` implementation.
+    If MEDIA_PLAYER is set to 'auto', attempts auto-detection by probing
+    each service. Otherwise uses the explicitly configured player.
 
     Args:
         cfg: Configuration object specifying which media player to use.
 
-    Supported values:
-        - ``volumio``  — Volumio (default)
+    Supported values for MEDIA_PLAYER:
+        - ``auto``     — Auto-detect (probe Volumio → MoOde → piCorePlayer)
+        - ``volumio``  — Volumio (default if not set)
         - ``moode``    — MoOde Audio
         - ``picore``   — piCorePlayer / LMS
 
@@ -50,6 +100,9 @@ def detect_media_player(cfg: Config) -> MediaPlayer:
     """
     player_type = cfg.media_player_type
     logger.info(f"Media player type: '{player_type}'")
+
+    if player_type == 'auto':
+        return auto_detect_media_player(cfg)
 
     if player_type == 'moode':
         from moode import MoodeClient

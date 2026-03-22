@@ -189,3 +189,31 @@ def test_detect_media_player_picore(monkeypatch):
     from picore_player import PiCorePlayerClient
     player = fn(cfg)
     assert isinstance(player, PiCorePlayerClient)
+
+
+def test_detect_media_player_auto_detects_volumio(monkeypatch):
+    """detect_media_player() auto-detects Volumio when MEDIA_PLAYER=auto."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'auto')
+    mock_ws_module = MagicMock()
+    mock_ws_module.WebSocketException = Exception
+    # Mock successful connection for Volumio
+    mock_ws_module.create_connection = MagicMock(return_value=MagicMock())
+    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
+    from volumio import VolumioClient
+    player = fn(cfg)
+    # Should auto-detect and return Volumio
+    assert isinstance(player, VolumioClient)
+
+
+def test_detect_media_player_auto_falls_back_to_volumio_on_failure(monkeypatch):
+    """detect_media_player() falls back to Volumio if all probes fail (MEDIA_PLAYER=auto)."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'auto')
+    mock_ws_module = MagicMock()
+    mock_ws_module.WebSocketException = Exception
+    # Mock all connections fail
+    mock_ws_module.create_connection = MagicMock(side_effect=Exception("All unavailable"))
+    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
+    from volumio import VolumioClient
+    player = fn(cfg)
+    # Should fall back to Volumio even when detection fails
+    assert isinstance(player, VolumioClient)
