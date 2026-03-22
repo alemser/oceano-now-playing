@@ -198,9 +198,10 @@ class MoodeClient(MediaPlayer):
         """
         try:
             if not os.path.exists(SHAIRPORT_METADATA_FILE):
-                logger.debug(f"Metadata FIFO not found: {SHAIRPORT_METADATA_FILE}")
+                logger.info(f"Metadata FIFO not found: {SHAIRPORT_METADATA_FILE}")
                 return None
 
+            logger.info("Attempting non-blocking read from metadata FIFO...")
             # Try to read plist from FIFO with non-blocking mode
             try:
                 # Open FIFO with O_NONBLOCK flag to avoid hanging
@@ -212,15 +213,18 @@ class MoodeClient(MediaPlayer):
                     os.close(fd)
                     
                 if not plist_data:
-                    logger.debug("Metadata FIFO returned no data")
+                    logger.info("Metadata FIFO returned no data (would block)")
                     return None
+                
+                logger.info(f"Read {len(plist_data)} bytes from metadata FIFO")
                 
                 # Parse plist
                 try:
                     plist = plistlib.loads(plist_data)
+                    logger.info(f"Successfully parsed plist with {len(plist)} fields")
                 except Exception as e:
                     # Data might be incomplete or corrupted - this is normal with FIFOs
-                    logger.debug(f"Failed to parse metadata plist (might be partial): {e}")
+                    logger.info(f"Failed to parse metadata plist: {e}")
                     return None
                 
                 # Extract standard metadata fields from iTunes plist
@@ -240,20 +244,20 @@ class MoodeClient(MediaPlayer):
                     logger.info(f"✓ Parsed AirPlay metadata: {metadata}")
                     return metadata
                 else:
-                    logger.debug("Metadata plist parsed but contained no useful fields")
+                    logger.info("Metadata plist parsed but contained no useful fields")
                     return None
                         
             except (BlockingIOError, IOError, OSError) as e:
                 # BlockingIOError = O_NONBLOCK and no data available (normal case)
                 # Other errors = actual read failures
                 if isinstance(e, BlockingIOError):
-                    logger.debug("No metadata available on FIFO (would block)")
+                    logger.info("No metadata available on FIFO (would block)")
                 else:
-                    logger.debug(f"Error reading metadata FIFO: {e}")
+                    logger.info(f"Error reading metadata FIFO: {type(e).__name__}: {e}")
                 return None
                 
         except Exception as e:
-            logger.debug(f"Unexpected error in _get_airplay_metadata: {e}")
+            logger.info(f"Unexpected error in _get_airplay_metadata: {e}")
             return None
 
     def connect(self) -> bool:
