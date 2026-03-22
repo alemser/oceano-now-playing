@@ -17,6 +17,8 @@ import json
 import logging
 import requests
 import subprocess
+import select
+import plistlib
 from urllib.parse import urlparse
 from media_player import MediaPlayer
 
@@ -181,22 +183,78 @@ class MoodeClient(MediaPlayer):
         return is_active
 
     def _get_airplay_metadata(self) -> dict | None:
-        """Read metadata for AirPlay streaming (currently returns None).
-        
-        Note: Shairport-sync writes metadata to /tmp/shairport-sync-metadata as a
-        FIFO (named pipe) in iTunes XML format. Reading from FIFOs is problematic:
-        - Blocking reads hang the service if writer isn't active
-        - Format requires plist parsing, not simple key=value
-        
-        For now, we return None and rely on MoOde's API metadata, even if stale.
-        The important fix is that we override status from "stop" to "play" when
-        AirPlay is detected - that enables music display instead of idle screen.
-        
+        """Read metadata from shairport-sync for currently playing AirPlay stream.
+
+        Shairport-sync writes metadata to /tmp/shairport-sync-metadata as a FIFO
+        (named pipe) in binary iTunes plist format. Opens with O_NONBLOCK flag to
+        avoid hanging the service if shairport isn't actively writing.
+
+        Extracts common metadata fields and maps them to standard playback schema:
+        - minm (title), asar (artist), asal (album), aaa (album artist)
+
         Returns:
-            None (metadata not available from FIFO)
+            Dictionary with parsed metadata (title, artist, album) or None
+            if FIFO unavailable, no data available, or parsing fails.
         """
-        logger.info("⚠ Metadata FIFO reading not implemented (blocking read issue)")
-        return None
+        try:
+            if not os.path.exists(SHAIRPORT_METADATA_FILE):
+                logger.debug(f"Metadata FIFO not found: {SHAIRPORT_METADATA_FILE}")
+                return None
+
+            # Try to read plist from FIFO with non-blocking mode
+            try:
+                # Open FIFO with O_NONBLOCK flag to avoid hanging
+                fd = os.open(SHAIRPORT_METADATA_FILE, os.O_RDONLY | os.O_NONBLOCK)
+                try:
+                    # Read up to 64KB of plist data
+                    plist_data = os.read(fd, 65536)
+                finally:
+                    os.close(fd)
+                    
+                if not plist_data:
+                    logger.debug("Metadata FIFO returned no data")
+                    return None
+                
+                # Parse plist
+                try:
+                    plist = plistlib.loads(plist_data)
+                except Exception as e:
+                    # Data might be incomplete or corrupted - this is normal with FIFOs
+                    logger.debug(f"Failed to parse metadata plist (might be partial): {e}")
+                    return None
+                
+                # Extract standard metadata fields from iTunes plist
+                metadata = {}
+                
+                # Common iTunes metadata keys
+                if "minm" in plist and plist["minm"]:  # Title
+                    metadata["title"] = str(plist["minm"])
+                if "asar" in plist and plist["asar"]:  # Artist
+                    metadata["artist"] = str(plist["asar"])
+                if "asal" in plist and plist["asal"]:  # Album
+                    metadata["album"] = str(plist["asal"])
+                if "aaa" in plist and plist["aaa"]:  # Album artist
+                    metadata["albumartist"] = str(plist["aaa"])
+                
+                if metadata:
+                    logger.info(f"✓ Parsed AirPlay metadata: {metadata}")
+                    return metadata
+                else:
+                    logger.debug("Metadata plist parsed but contained no useful fields")
+                    return None
+                        
+            except (BlockingIOError, IOError, OSError) as e:
+                # BlockingIOError = O_NONBLOCK and no data available (normal case)
+                # Other errors = actual read failures
+                if isinstance(e, BlockingIOError):
+                    logger.debug("No metadata available on FIFO (would block)")
+                else:
+                    logger.debug(f"Error reading metadata FIFO: {e}")
+                return None
+                
+        except Exception as e:
+            logger.debug(f"Unexpected error in _get_airplay_metadata: {e}")
+            return None
 
     def connect(self) -> bool:
         """Test connection to MoOde HTTP API.
