@@ -196,7 +196,7 @@ class MoodeClient(MediaPlayer):
         """
         try:
             if not os.path.exists(SHAIRPORT_METADATA_FILE):
-                logger.debug(f"Metadata file does not exist: {SHAIRPORT_METADATA_FILE}")
+                logger.info(f"⚠ Metadata FIFO does not exist: {SHAIRPORT_METADATA_FILE}")
                 _METADATA_CACHE["data"] = None
                 return None
 
@@ -205,15 +205,18 @@ class MoodeClient(MediaPlayer):
                 mtime = os.path.getmtime(SHAIRPORT_METADATA_FILE)
                 if mtime == _METADATA_CACHE["mtime"] and _METADATA_CACHE["data"] is not None:
                     # File hasn't changed, return cached data
+                    logger.debug(f"Using cached metadata")
                     return _METADATA_CACHE["data"]
             except OSError:
                 pass
 
+            logger.info("Attempting to read shairport metadata FIFO...")
             with open(SHAIRPORT_METADATA_FILE, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read().strip()
 
+            logger.info(f"Read {len(content)} bytes from metadata FIFO")
             if not content:
-                logger.debug("Metadata file is empty")
+                logger.info("Metadata FIFO is empty")
                 _METADATA_CACHE["data"] = None
                 return None
 
@@ -324,9 +327,12 @@ class MoodeClient(MediaPlayer):
             
             # Only return state if it changed
             if normalized_state != self._last_state:
+                logger.info(f"State changed: status={normalized_state.get('status')}, "
+                           f"title={normalized_state.get('title')}")
                 self._last_state = normalized_state
                 return normalized_state
             
+            logger.debug(f"State unchanged (status={normalized_state.get('status')})")
             return None
         except (requests.RequestException, json.JSONDecodeError) as e:
             logger.debug(f"Error polling MoOde: {e}")
