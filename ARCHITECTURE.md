@@ -264,7 +264,7 @@ TEXT MODE:
 │  Song Name                          │
 │  Artist Name                        │
 │                                     │
-│  ████████░░░░░░  2:15 / 3:45       │
+│  ████████░░░░░░  Progress          │
 │                                     │
 │  44.1 kHz | 16 bit | Spotify       │
 └─────────────────────────────────────┘
@@ -275,7 +275,7 @@ ARTWORK MODE:
 │        [Album Art Image]            │
 │        (480×320 or centered)        │
 │                                     │
-│  2:15 / 3:45  │  Artist - Song     │
+│  ████████░░░░░░  Artist - Song     │
 └─────────────────────────────────────┘
 
 IDLE SCREEN:
@@ -306,26 +306,7 @@ Memory layout: Row-major, left-to-right
 
 **Key Functions**:
 
-**1. Time Formatting**
-```python
-def _format_time(ms: int | None) -> str:
-    """Convert milliseconds to MM:SS.
-    
-    Edge cases:
-    - None (AirPlay) → "00:00"
-    - Negative (clock skew) → "00:00"
-    - Zero → "00:00"
-    - 3661000 (1h 1m 1s) → "61:01"
-    """
-    if ms is None or ms < 0:
-        return "00:00"
-    total_seconds = ms // 1000
-    minutes = total_seconds // 60
-    seconds = total_seconds % 60
-    return f"{minutes}:{seconds:02d}"
-```
-
-**2. Dominant Color Extraction** (For theme)
+**1. Dominant Color Extraction** (For theme)
 ```python
 def _get_dominant_color(image: PIL.Image) -> tuple:
     """Extract dominant color from album art.
@@ -365,8 +346,8 @@ render_text_mode(state: dict) -> bytes:
     1. Background (black or dark)
     2. Title (white, bold)
     3. Artist (gray, smaller)
-    4. Progress bar
-    5. Quality info
+    4. Progress bar indicator
+    5. Quality info (44.1 kHz, 16 bit, service)
     
     Returns: RGB565 bytes for framebuffer
     """
@@ -377,7 +358,8 @@ render_artwork_mode(state: dict) -> bytes:
     Layout:
     1. Fetch album art
     2. Resize/center (maintain aspect)
-    3. Overlay info at bottom
+    3. Overlay progress bar at bottom
+    4. Show artist and song title
     
     Returns: RGB565 bytes for framebuffer
     """
@@ -495,14 +477,14 @@ def write_to_framebuffer(buffer: bytes) -> None:
 #   - Pause/resume transition resets rendered_state
 #   - Mode alternation timing
 #   - Sleep/wake logic
-#   - Seek interpolation
+#   - Seek interpolation for smooth progress bar
 ```
 
 **Renderer Testing**:
 ```python
 # Tests verify output format and edge cases
 # Verify:
-#   - Time formatting for all edge cases
+#   - Progress bar calculation and rendering
 #   - Color extraction
 #   - Cache behavior (LRU)
 #   - Image resizing

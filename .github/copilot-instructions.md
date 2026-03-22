@@ -3,7 +3,7 @@
 ## 🎯 Project Overview
 **spi-now-playing** displays Volumio's current playing status (title, artist, album, artwork, quality) on an SPI-connected display for Raspberry Pi 5.
 
-- **Hardware**: Raspberry Pi 5 with SPI framebuffer display
+- **Hardware**: Raspberry Pi 5 with generic SPI framebuffer display (normally a 3.5 inch 480×320, RGB565)
 - **Target Platform**: Volumio (music server running on localhost:3000)
 - **Display Output**: Linux framebuffer via PIL (`/dev/fb0`)
 - **Architecture**: Event-driven state machine + WebSocket listener
@@ -82,17 +82,19 @@ global rendered_state, current_mode, last_mode_change, last_state_update
 
 ```python
 # Key functions:
-- _format_time(ms)           → "MM:SS" (handle edge cases: 0, None, negative)
 - _get_dominant_color(image) → RGB tuple (for theme extraction)
 - Renderer class:
   - cache_album_art()        → 10-item LRU cache (auto-clear on overflow)
-  - render_text_mode()       → Title + artist + quality
-  - render_artwork_mode()    → Album art centered
+  - render_text_mode()       → Title + artist + quality + progress bar
+  - render_artwork_mode()    → Album art centered + progress bar
   - render_idle_screen()     → "Waiting for Volumio..."
 
 # Framebuffer:
 - 480×320 pixels, RGB565 format (2 bytes per pixel)
 - Writes directly to /dev/fb0
+
+# NOTE: Time displays (MM:SS) not in scope for this phase.
+# Progress bar is the key indicator of playback position.
 ```
 
 **When to use AI help**:
@@ -121,10 +123,10 @@ tests/test_state_machine.py (20+ tests)
   - TestDisplayStates                   → Sleep/wake logic
 
 tests/test_renderer.py (15+ tests)
-  - test_format_time_*                  → Time formatting edge cases
   - test_dominant_color_*               → Color extraction
   - test_cache_album_art_*              → LRU cache behavior
   - test_image_resizing_*               → PIL operations
+  - test_progress_bar_*                 → Progress bar rendering and seek interpolation
 ```
 
 ### Mock Strategy
@@ -150,8 +152,8 @@ def receive_message(self, timeout: float = 1.0) -> dict | None:
     """Receive and parse WebSocket message."""
     ...
 
-def _format_time(ms: int | None) -> str:
-    """Convert milliseconds to MM:SS format."""
+def _get_dominant_color(image: PIL.Image) -> tuple:
+    """Extract dominant color from album art for theme."""
     ...
 ```
 
