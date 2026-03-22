@@ -153,6 +153,8 @@ def main():
                     
                     # Store data for local seek interpolation
                     last_volumio_seek = new_data.get('seek', 0)
+                    if last_volumio_seek is None:
+                        last_volumio_seek = 0
                     last_volumio_timestamp = now
                     
                     # Reset standby timer on ANY state change message
