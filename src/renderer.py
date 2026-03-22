@@ -227,6 +227,8 @@ class Renderer:
         albumart = data.get('albumart', '')
         status = data.get('status', 'stop')
         
+        logger.info(f"[RENDER] Title: {title}, Artist: {artist}, Album: {album}, Status: {status}, Albumart: {albumart}")
+        
         # Progress Calculation
         seek = data.get('seek', 0) or 0
         if seek is None:
@@ -245,9 +247,15 @@ class Renderer:
         accent_color = self.default_accent
         art = None
         if albumart:
+            logger.debug(f"[RENDER] Fetching artwork: {albumart}")
             art_data = self._get_cached_art(albumart)
             if art_data:
                 art, accent_color = art_data
+                logger.info(f"[RENDER] Artwork loaded successfully")
+            else:
+                logger.warning(f"[RENDER] Failed to load artwork, using default accent")
+        else:
+            logger.debug(f"[RENDER] No albumart provided by media player")
 
         # --- DRAW PROGRESS BAR (Common for both modes) ---
         pb_height = 6
@@ -301,10 +309,13 @@ class Renderer:
     def _get_cached_art(self, art_url):
         """Fetches and resizes the cover art, with caching and dominant color extraction."""
         if art_url in self.art_cache:
+            logger.debug(f"[ART CACHE HIT] URL: {art_url}")
             return self.art_cache[art_url]
 
+        logger.info(f"[ART FETCH] URL: {art_url}")
         try:
             if len(self.art_cache) > 10:
+                logger.debug(f"[ART CACHE] Clearing cache (size: {len(self.art_cache)})")
                 self.art_cache.clear()
 
             # Build URL and add cache buster if it's a relative path from Volumio
@@ -318,17 +329,23 @@ class Renderer:
             else:
                 url = art_url
             
+            logger.debug(f"[ART FETCH] Full URL: {url}")
             res = requests.get(url, timeout=3)
+            logger.debug(f"[ART FETCH] Status: {res.status_code}, Size: {len(res.content)} bytes, Content-Type: {res.headers.get('content-type', 'unknown')}")
+            
             art = Image.open(BytesIO(res.content)).convert("RGB")
+            logger.debug(f"[ART FETCH] Image format: {art.format}, Size: {art.size}, Mode: {art.mode}")
             
             # Extract dominant color before resizing for display
             accent = self._get_dominant_color(art)
+            logger.debug(f"[ART FETCH] Dominant color: RGB{accent}")
             
             # Resize for display
             art_resized = art.resize((self.art_size, self.art_size), Image.Resampling.LANCZOS)
             
             self.art_cache[art_url] = (art_resized, accent)
+            logger.info(f"[ART SUCCESS] Cached and resized: {art_url}")
             return art_resized, accent
         except Exception as e:
-            logger.warning(f"Error loading album art: {e}")
+            logger.warning(f"[ART ERROR] Failed to load artwork from {art_url}: {type(e).__name__}: {e}")
             return None
