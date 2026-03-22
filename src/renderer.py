@@ -2,7 +2,9 @@ import os
 import time
 import textwrap
 import logging
+import subprocess
 from io import BytesIO
+from typing import Optional, Tuple, Dict, Any
 import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageStat
@@ -27,12 +29,18 @@ class Renderer:
         # Try to open the framebuffer once
         self._open_fb()
 
-    def _open_fb(self):
+    def _open_fb(self) -> None:
         """Opens the framebuffer persistently and detects its real size."""
         if os.path.exists(self.fb_device):
             try:
                 # Try to ensure permissions
-                os.system(f"sudo chmod 666 {self.fb_device}")
+                try:
+                    subprocess.run(['sudo', 'chmod', '666', self.fb_device], timeout=2, check=False)
+                except FileNotFoundError:
+                    logger.warning("sudo not found, attempting without permission change")
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"Timeout setting permissions on {self.fb_device}")
+                
                 self.fb_handle = open(self.fb_device, "r+b") # Open for read and write
                 
                 # Detect the real size of the framebuffer
@@ -41,18 +49,24 @@ class Renderer:
                 self.fb_handle.seek(0)
                 
                 logger.info(f"Framebuffer {self.fb_device} opened. Detected size: {self.real_fb_size} bytes. Format: {self.color_format}")
-            except Exception as e:
+            except (OSError, IOError) as e:
                 logger.error(f"Could not open framebuffer {self.fb_device}: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error opening framebuffer {self.fb_device}: {e}")
         else:
             logger.error(f"Framebuffer device {self.fb_device} not found.")
 
-    def close(self):
+    def close(self) -> None:
         """Closes the framebuffer handle."""
         if self.fb_handle:
-            self.fb_handle.close()
-            self.fb_handle = None
+            try:
+                self.fb_handle.close()
+            except OSError as e:
+                logger.warning(f"Error closing framebuffer: {e}")
+            finally:
+                self.fb_handle = None
 
-    def _rgb888_to_565(self, img):
+    def _rgb888_to_565(self, img: Image.Image) -> bytes:
         """Converts RGB888 to 565 according to format (RGB or BGR)."""
         img_array = np.array(img).astype(np.uint16)
         r, g, b = (img_array[:,:,0] >> 3), (img_array[:,:,1] >> 2), (img_array[:,:,2] >> 3)
@@ -64,7 +78,7 @@ class Renderer:
             # Default: RGB565 - R (bits 11-15), G (bits 5-10), B (bits 0-4)
             return (r << 11 | g << 5 | b).tobytes()
 
-    def clear(self, use_fsync=True):
+    def clear(self, use_fsync: bool = True) -> None:
         """Clears the framebuffer by filling the entire device with zeros."""
         try:
             if not self.fb_handle:
@@ -79,13 +93,16 @@ class Renderer:
                 if use_fsync:
                     try:
                         os.fsync(self.fb_handle.fileno())
-                    except OSError:
-                        pass # Some devices do not support fsync
-        except Exception as e:
+                    except OSError as e:
+                        logger.debug(f"fsync not supported on this device: {e}")
+        except (OSError, IOError) as e:
             logger.error(f"Error clearing framebuffer: {e}")
             self.fb_handle = None
+        except Exception as e:
+            logger.error(f"Unexpected error clearing framebuffer: {e}")
+            self.fb_handle = None
 
-    def _write_to_fb(self, img):
+    def _write_to_fb(self, img: Image.Image) -> None:
         """Writes the image to the framebuffer as directly as possible."""
         if not self.fb_handle:
             self._open_fb()
@@ -105,13 +122,16 @@ class Renderer:
                 # but helps avoid 'tearing'
                 try:
                     os.fsync(self.fb_handle.fileno())
-                except:
-                    pass
-            except Exception as e:
+                except OSError as e:
+                    logger.debug(f"fsync not supported: {e}")
+            except (OSError, IOError) as e:
                 logger.error(f"Error writing to framebuffer: {e}")
                 self.fb_handle = None
+            except Exception as e:
+                logger.error(f"Unexpected error writing to framebuffer: {e}")
+                self.fb_handle = None
 
-    def get_font(self, size, bold=False):
+    def get_font(self, size: int, bold: bool = False):
         """Tries to load common fonts or returns the default."""
         font_paths = [
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -120,25 +140,40 @@ class Renderer:
         ]
         for path in font_paths:
             if os.path.exists(path):
-                return ImageFont.truetype(path, size)
+                try:
+                    font = ImageFont.truetype(path, size)
+                    logger.debug(f"Loaded font: {path}")
+                    return font
+                except OSError as e:
+                    logger.debug(f"Could not load font {path}: {e}")
+        logger.warning("No TrueType fonts found, using default font")
         return ImageFont.load_default()
 
-    def _get_dominant_color(self, img):
+    def _get_dominant_color(self, img: Image.Image) -> Tuple[int, int, int]:
         """Extracts the dominant color from an image."""
-        small_img = img.resize((1, 1), Image.Resampling.BILINEAR)
-        res = small_img.getpixel((0, 0))
-        # Ensure it's not too dark to be visible
-        if sum(res) < 60:
+        try:
+            small_img = img.resize((1, 1), Image.Resampling.BILINEAR)
+            res = small_img.getpixel((0, 0))
+            # Ensure it's not too dark to be visible
+            if sum(res) < 60:
+                return self.default_accent
+            return res
+        except Exception as e:
+            logger.warning(f"Error extracting dominant color: {e}")
             return self.default_accent
-        return res
 
-    def _format_time(self, seconds):
+    def _format_time(self, seconds: Optional[float]) -> str:
         """Formats seconds into MM:SS."""
-        if seconds is None: return "00:00"
-        m, s = divmod(int(seconds), 60)
-        return f"{m:02d}:{s:02d}"
+        if seconds is None:
+            return "00:00"
+        try:
+            m, s = divmod(int(seconds), 60)
+            return f"{m:02d}:{s:02d}"
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Error formatting time {seconds}: {e}")
+            return "00:00"
 
-    def _draw_centered_text(self, draw, text, y, font, fill, max_width=440):
+    def _draw_centered_text(self, draw: ImageDraw.ImageDraw, text: str, y: int, font, fill: Tuple[int, int, int], max_width: int = 440) -> int:
         """Draws text centered on the screen, scaling font down if it overflows."""
         # Try to fit the text by reducing font size if necessary
         current_font = font
@@ -157,7 +192,7 @@ class Renderer:
         draw.text(((self.width - w) // 2, y), text, fill=fill, font=current_font)
         return y + (bbox[3] - bbox[1]) + 10
 
-    def render_idle_screen(self):
+    def render_idle_screen(self) -> Image.Image:
         """Renders a stylized grayscale logo for the idle/startup state."""
         img = Image.new('RGB', (self.width, self.height), color=(10, 10, 10))
         draw = ImageDraw.Draw(img)
@@ -198,7 +233,7 @@ class Renderer:
         self._write_to_fb(img)
         return img
 
-    def render(self, data, show_capa_mode=False):
+    def render(self, data: Dict[str, Any], show_capa_mode: bool = False) -> None:
         """Renders the complete V2 interface."""
         if not data:
             return
@@ -294,11 +329,11 @@ class Renderer:
 
         self._write_to_fb(img)
 
-    def clear_art_cache(self):
+    def clear_art_cache(self) -> None:
         """Clears the album art cache."""
         self.art_cache.clear()
 
-    def _get_cached_art(self, art_url):
+    def _get_cached_art(self, art_url: str) -> Optional[Tuple[Image.Image, Tuple[int, int, int]]]:
         """Fetches and resizes the cover art, with caching and dominant color extraction."""
         if art_url in self.art_cache:
             return self.art_cache[art_url]
@@ -318,7 +353,16 @@ class Renderer:
             else:
                 url = art_url
             
-            res = requests.get(url, timeout=3)
+            try:
+                res = requests.get(url, timeout=3)
+                res.raise_for_status()
+            except requests.exceptions.Timeout:
+                logger.warning(f"Timeout loading album art from {url}")
+                return None
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Error fetching album art from {url}: {e}")
+                return None
+            
             art = Image.open(BytesIO(res.content)).convert("RGB")
             
             # Extract dominant color before resizing for display
@@ -329,6 +373,9 @@ class Renderer:
             
             self.art_cache[art_url] = (art_resized, accent)
             return art_resized, accent
+        except (IOError, OSError) as e:
+            logger.warning(f"Error loading album art image data: {e}")
+            return None
         except Exception as e:
-            logger.warning(f"Error loading album art: {e}")
+            logger.warning(f"Unexpected error loading album art: {e}")
             return None
