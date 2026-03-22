@@ -8,3 +8,7 @@ RPi.GPIO
 # Volumio Communication
 requests
 websocket-client
+
+# Testing (dev only)
+pytest
+pytest-mock
