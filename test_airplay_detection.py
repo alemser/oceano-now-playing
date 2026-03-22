@@ -55,13 +55,13 @@ def test_metadata_file() -> bool:
         f.write("songalbumartist=Album Artist\n")
         temp_file = f.name
     
+    # Monkey-patch the SHAIRPORT_METADATA_FILE path
+    import moode as moode_module
+    original_path = moode_module.SHAIRPORT_METADATA_FILE
+    original_cache = moode_module._METADATA_CACHE.copy()
+    
     try:
-        # Monkey-patch the SHAIRPORT_METADATA_FILE path
-        import moode as moode_module
-        original_path = moode_module.SHAIRPORT_METADATA_FILE
         moode_module.SHAIRPORT_METADATA_FILE = temp_file
-        
-        # Reset cache
         moode_module._METADATA_CACHE = {"mtime": 0, "data": None}
         
         client = MoodeClient()
@@ -73,11 +73,11 @@ def test_metadata_file() -> bool:
         assert metadata.get("title") == "Test Song", "Title mismatch"
         assert metadata.get("album") == "Test Album", "Album mismatch"
         print("✓ Metadata parsing works correctly")
-        
-        # Restore original path
-        moode_module.SHAIRPORT_METADATA_FILE = original_path
         return True
     finally:
+        # Guarantee restoration of module state even on exception
+        moode_module.SHAIRPORT_METADATA_FILE = original_path
+        moode_module._METADATA_CACHE = original_cache
         os.unlink(temp_file)
 
 def test_empty_metadata_file():
@@ -87,10 +87,12 @@ def test_empty_metadata_file():
     # Test non-existent file
     import moode as moode_module
     original_path = moode_module.SHAIRPORT_METADATA_FILE
-    moode_module.SHAIRPORT_METADATA_FILE = "/nonexistent/path/metadata"
-    moode_module._METADATA_CACHE = {"mtime": 0, "data": None}
+    original_cache = moode_module._METADATA_CACHE.copy()
     
     try:
+        moode_module.SHAIRPORT_METADATA_FILE = "/nonexistent/path/metadata"
+        moode_module._METADATA_CACHE = {"mtime": 0, "data": None}
+        
         client = MoodeClient()
         metadata = client._get_airplay_metadata()
         print(f"Non-existent file result: {metadata}")
@@ -98,6 +100,7 @@ def test_empty_metadata_file():
         print("✓ Non-existent file handled correctly")
     finally:
         moode_module.SHAIRPORT_METADATA_FILE = original_path
+        moode_module._METADATA_CACHE = original_cache
 
 def test_state_normalization():
     """Test state normalization with streaming detection."""

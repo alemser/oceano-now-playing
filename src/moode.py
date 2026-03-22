@@ -150,17 +150,21 @@ class MoodeClient(MediaPlayer):
             return False
 
     def _is_streaming_renderer_active(self) -> bool:
-        """Detect if audio is streaming from a renderer (AirPlay, Bluetooth, UPnP, etc).
+        """Detect if audio is streaming from shairport-sync (AirPlay).
         
-        Uses multi-layered detection:
-        1. Shairport-sync process is running (necessary for AirPlay)
+        Uses multi-layered detection specifically for AirPlay via shairport-sync:
+        1. Shairport-sync process is running (necessary condition for AirPlay)
         2. ALSA shows active audio playback (hardware-level confirmation)
-        3. Metadata file is being updated (software-level confirmation)
+        3. Metadata file is being updated (software-level confirmation of active stream)
         
-        Any 2 of 3 indicators = high confidence streaming is active.
+        Requires 2 of 3 indicators for high-confidence detection.
+        
+        Note: This detects AirPlay/shairport-sync streaming. Bluetooth and UPnP
+        streams use different mechanisms (BlueZ, UPnP renderers) not covered here.
+        For MoOde, AirPlay is the primary streaming renderer of interest.
         
         Returns:
-            True if streaming renderer is detected, False otherwise.
+            True if AirPlay streaming via shairport-sync is detected, False otherwise.
         """
         logger.debug("--- Streaming Renderer Detection ---")
         shairport_running = self._check_shairport_running()
@@ -387,15 +391,15 @@ class MoodeClient(MediaPlayer):
             streaming_active = self._is_streaming_renderer_active()
             
             if streaming_active:
-                logger.info("✓ Streaming renderer detected, overriding status: stop -> play")
+                logger.debug("✓ Streaming renderer detected, overriding status: stop -> play")
                 status = "play"
                 
                 # Try to get metadata from the streaming source
                 airplay_metadata = self._get_airplay_metadata()
                 if airplay_metadata:
-                    logger.info(f"✓ Using streaming metadata: {airplay_metadata}")
+                    logger.debug(f"✓ Using streaming metadata: {airplay_metadata}")
                 else:
-                    logger.info("⚠ Streaming detected but no metadata available yet")
+                    logger.debug("⚠ Streaming detected but no metadata available yet")
             else:
                 logger.debug("✗ No streaming renderer detected, keeping status as stop")
 

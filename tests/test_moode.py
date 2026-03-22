@@ -368,3 +368,79 @@ def test_moode_client_poll_time_reset_on_close(moode_client):
     moode_client.close()
     
     assert moode_client._last_poll_time == 0.0
+
+
+def test_moode_streaming_detected_overrides_stop_to_play(moode_client, moode_response_stopped):
+    """When streaming is detected, status 'stop' is overridden to 'play'."""
+    from unittest.mock import patch
+    
+    # MPD reports stop (no queue playback), but streaming is active
+    with patch.object(moode_client, '_is_streaming_renderer_active', return_value=True):
+        with patch.object(moode_client, '_get_airplay_metadata', return_value=None):
+            normalized = moode_client._normalize_state(moode_response_stopped)
+            
+            assert normalized["status"] == "play"  # Overridden from "stop" to "play"
+
+
+def test_moode_streaming_detected_uses_streaming_metadata(moode_client, moode_response_stopped):
+    """When streaming detected, use streaming metadata over MPD queue metadata."""
+    from unittest.mock import patch
+    
+    streaming_metadata = {
+        "title": "iPhone Song",
+        "artist": "Phone User",
+        "album": "AirPlay Stream"
+    }
+    
+    with patch.object(moode_client, '_is_streaming_renderer_active', return_value=True):
+        with patch.object(moode_client, '_get_airplay_metadata', return_value=streaming_metadata):
+            normalized = moode_client._normalize_state(moode_response_stopped)
+            
+            # Should use streaming metadata, not MPD queue metadata
+            assert normalized["status"] == "play"
+            assert normalized["title"] == "iPhone Song"
+            assert normalized["artist"] == "Phone User"
+            assert normalized["album"] == "AirPlay Stream"
+
+
+def test_moode_streaming_detected_no_metadata_fallback(moode_client, moode_response_stopped):
+    """When streaming detected but metadata unavailable, still override to play with MPD fallback."""
+    from unittest.mock import patch
+    
+    # Set some MPD queue data even though not actively playing
+    stopped_state = moode_response_stopped.copy()
+    stopped_state["title"] = "Last Track"
+    stopped_state["artist"] = "Last Artist"
+    
+    with patch.object(moode_client, '_is_streaming_renderer_active', return_value=True):
+        with patch.object(moode_client, '_get_airplay_metadata', return_value=None):
+            normalized = moode_client._normalize_state(stopped_state)
+            
+            # Should override to play and use MPD fallback metadata
+            assert normalized["status"] == "play"
+            assert normalized["title"] == "Last Track"
+            assert normalized["artist"] == "Last Artist"
+
+
+def test_moode_streaming_not_detected_keeps_stop(moode_client, moode_response_stopped):
+    """When streaming is NOT detected, status remains 'stop'."""
+    from unittest.mock import patch
+    
+    with patch.object(moode_client, '_is_streaming_renderer_active', return_value=False):
+        with patch.object(moode_client, '_get_airplay_metadata', return_value=None):
+            normalized = moode_client._normalize_state(moode_response_stopped)
+            
+            assert normalized["status"] == "stop"  # Remains 'stop' - no override
+
+
+def test_moode_streaming_only_checked_when_mpd_stop(moode_client, moode_response_playing):
+    """Streaming detection is only checked when MPD status is 'stop'."""
+    from unittest.mock import patch
+    
+    # When MPD is already playing, no need to check for streaming
+    with patch.object(moode_client, '_is_streaming_renderer_active') as mock_streaming:
+        normalized = moode_client._normalize_state(moode_response_playing)
+        
+        # Should NOT call streaming detection when status is already 'play'
+        mock_streaming.assert_not_called()
+        assert normalized["status"] == "play"
