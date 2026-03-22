@@ -134,7 +134,7 @@ def main():
                     last_sync_time = now
                 
                 # Receive messages
-                new_data = volumio.receive_message(timeout=0.5)
+                new_data = volumio.receive_message(timeout=0.1)
                 
                 if new_data:
                     # Detect song change to reset text mode and clear art cache
