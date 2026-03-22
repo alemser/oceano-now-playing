@@ -89,6 +89,10 @@ def main():
     
     logger.info("SPI Now Playing - Starting...")
     
+    # Wait for Volumio to fully boot and avoid framebuffer conflicts
+    logger.info("Waiting for system to stabilize...")
+    time.sleep(3)
+    
     # Initialize modules
     # Extract Volumio host for renderer to fetch album art
     volumio_host = "localhost"

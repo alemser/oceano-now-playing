@@ -38,6 +38,7 @@ After=network-online.target volumio.service
 Wants=network-online.target
 
 [Service]
+Type=simple
 ExecStart=${WORKING_DIR}/venv/bin/python ${WORKING_DIR}/src/spi-now-playing.py
 WorkingDirectory=${WORKING_DIR}
 StandardOutput=journal
@@ -45,7 +46,7 @@ StandardError=journal
 Restart=always
 RestartSec=10
 StartLimitIntervalSec=0
-TimeoutStopSec=15
+TimeoutStopSec=30
 User=${USER_NAME}
 Group=video
 SupplementaryGroups=video
