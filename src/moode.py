@@ -103,6 +103,52 @@ class MoodeClient(MediaPlayer):
             logger.debug(f"Error checking AirPlay status: {e}")
             return False
 
+    def _get_airplay_metadata(self) -> dict | None:
+        """Read metadata from shairport-sync for currently playing AirPlay stream.
+
+        Shairport-sync writes metadata to /tmp/shairport-sync-metadata in a
+        special format. Parse it to extract artist, title, album, etc.
+
+        Returns:
+            Dictionary with parsed metadata (title, artist, album) or None
+            if metadata file is not available or empty.
+        """
+        try:
+            if not os.path.exists(SHAIRPORT_METADATA_FILE):
+                return None
+
+            with open(SHAIRPORT_METADATA_FILE, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read().strip()
+
+            if not content:
+                return None
+
+            # Parse shairport-sync metadata format: key=value pairs
+            metadata = {}
+            for line in content.split("\n"):
+                line = line.strip()
+                if not line or "=" not in line:
+                    continue
+
+                key, value = line.split("=", 1)
+                key = key.strip().lower()
+                value = value.strip()
+
+                # Map shairport keys to our standard schema
+                if key == "artist":
+                    metadata["artist"] = value
+                elif key == "title":
+                    metadata["title"] = value
+                elif key == "album":
+                    metadata["album"] = value
+                elif key == "songalbumartist":
+                    metadata["albumartist"] = value
+
+            return metadata if metadata else None
+        except Exception as e:
+            logger.debug(f"Error reading AirPlay metadata: {e}")
+            return None
+
     def connect(self) -> bool:
         """Test connection to MoOde HTTP API.
 
@@ -213,9 +259,14 @@ class MoodeClient(MediaPlayer):
 
         # Override status if AirPlay is actively streaming
         # (MPD reports "stop" when playing via AirPlay, not its queue)
+        airplay_metadata = None
         if status == "stop" and self._is_airplay_active():
             logger.debug("AirPlay streaming detected, overriding MPD 'stop' status to 'play'")
             status = "play"
+            # Try to get actual metadata from AirPlay stream
+            airplay_metadata = self._get_airplay_metadata()
+            if airplay_metadata:
+                logger.debug(f"Using AirPlay metadata: {airplay_metadata}")
 
         # Build album artwork URL (relative path needs base URL)
         coverurl = raw_state.get("coverurl")
@@ -232,17 +283,31 @@ class MoodeClient(MediaPlayer):
         elif bitrate and bitrate != "0 bps":
             quality = bitrate
 
-        return {
-            "title": raw_state.get("title", ""),
-            "artist": raw_state.get("artist", ""),
-            "album": raw_state.get("album", ""),
-            "albumart": albumart,
-            "status": status,
-            "seek": seek,
-            "duration": duration,
-            "quality": quality,
-            "volume": int(raw_state.get("volume", 100)),
-        }
+        # Use AirPlay metadata if available, otherwise fall back to MPD metadata
+        if airplay_metadata:
+            return {
+                "title": airplay_metadata.get("title", ""),
+                "artist": airplay_metadata.get("artist", ""),
+                "album": airplay_metadata.get("album", ""),
+                "albumart": albumart,
+                "status": status,
+                "seek": seek,
+                "duration": duration,
+                "quality": quality,
+                "volume": int(raw_state.get("volume", 100)),
+            }
+        else:
+            return {
+                "title": raw_state.get("title", ""),
+                "artist": raw_state.get("artist", ""),
+                "album": raw_state.get("album", ""),
+                "albumart": albumart,
+                "status": status,
+                "seek": seek,
+                "duration": duration,
+                "quality": quality,
+                "volume": int(raw_state.get("volume", 100)),
+            }
 
     def is_connected(self) -> bool:
         """Check if currently connected to MoOde.
