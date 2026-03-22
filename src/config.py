@@ -49,7 +49,7 @@ class Config:
         - COLOR_FORMAT: RGB565 or BGR565 (default: RGB565)
         - MEDIA_PLAYER: auto, volumio, moode, or picore (default: volumio)
         - VOLUMIO_URL: WebSocket URL for Volumio
-        - MOODE_URL: WebSocket URL for MoOde
+        - MOODE_URL: HTTP polling endpoint for MoOde (e.g., http://localhost/engine-mpd.php)
         - LMS_URL: WebSocket URL for piCorePlayer/LMS
         - STANDBY_TIMEOUT: display sleep timeout in seconds (default: 600)
         

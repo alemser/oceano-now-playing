@@ -23,8 +23,8 @@ last_active_time = time.time()
 last_cycle_time = time.time()
 last_sync_time = 0
 last_render_time = 0
-last_volumio_timestamp = 0 # Local timestamp when pushState was received
-last_volumio_seek = 0      # Seek value from Volumio at that timestamp
+last_seek_timestamp = 0 # Local timestamp when state was received
+last_known_seek = 0      # Seek value from media player at that timestamp
 is_sleeping = False
 is_showing_idle = False    # Tracks if idle screen is currently displayed
 
@@ -255,7 +255,7 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 def main():
-    global last_state, last_rendered_state, last_rendered_mode, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_volumio_timestamp, last_volumio_seek, is_sleeping, is_showing_idle, config, renderer, volumio
+    global last_state, last_rendered_state, last_rendered_mode, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_seek_timestamp, last_known_seek, is_sleeping, is_showing_idle, config, renderer, player
     
     # Initialize configuration (moved here to avoid side effects at import time)
     config = Config()
@@ -286,7 +286,7 @@ def main():
         config.framebuffer_device, config.color_format,
         volumio_host=volumio_host
     )
-    volumio = detect_media_player(config)
+    player = detect_media_player(config)
     
     # Disable the blinking cursor on the framebuffer console
     disable_cursor()
@@ -304,12 +304,12 @@ def main():
     while True:
         try:
             logger.info(f"Connecting to media player ({config.media_player_type})...")
-            if not volumio.connect():
+            if not player.connect():
                 time.sleep(5)
                 continue
             
             # Immediately request state to force a render
-            volumio.get_state()
+            player.get_state()
             last_sync_time = time.time()
             
             while True:
@@ -317,11 +317,11 @@ def main():
                 
                 # Periodic synchronization every 30 seconds
                 if now - last_sync_time > 30:
-                    volumio.get_state()
+                    player.get_state()
                     last_sync_time = now
                 
                 # Receive messages
-                new_data = volumio.receive_message(timeout=0.1)
+                new_data = player.receive_message(timeout=0.1)
                 
                 if new_data:
                     # Detect song change to reset text mode and clear art cache
@@ -339,10 +339,10 @@ def main():
                         logger.info(f"New song detected: {new_data.get('title')} - {new_data.get('artist')}. Starting in text mode.")
                     
                     # Store data for local seek interpolation
-                    last_volumio_seek = new_data.get('seek', 0)
-                    if last_volumio_seek is None:
-                        last_volumio_seek = 0
-                    last_volumio_timestamp = now
+                    last_known_seek = new_data.get('seek', 0)
+                    if last_known_seek is None:
+                        last_known_seek = 0
+                    last_seek_timestamp = now
                     
                     # Reset standby timer on ANY state change message
                     last_active_time = now
@@ -412,9 +412,9 @@ def main():
 
                 if state_changed or mode_changed or time_to_update_progress:
                     # Interpolate seek time
-                    current_seek = last_volumio_seek
+                    current_seek = last_known_seek
                     if last_state.get('status') == 'play':
-                        current_seek += int((now - last_volumio_timestamp) * 1000)
+                        current_seek += int((now - last_seek_timestamp) * 1000)
                     
                     render_data = last_state.copy()
                     render_data['seek'] = current_seek
@@ -429,8 +429,8 @@ def main():
 
         except Exception as e:
             logger.error(f"Error in connection/main loop: {e}")
-            if volumio:
-                volumio.close()
+            if player:
+                player.close()
             time.sleep(5)
 
 if __name__ == "__main__":

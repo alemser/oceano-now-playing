@@ -8,15 +8,22 @@ This implementation uses polling to fetch playback state at regular intervals,
 maintaining the same MediaPlayer interface as other clients (Volumio, piCorePlayer).
 """
 
+import time
 import json
 import logging
 import requests
+from urllib.parse import urlparse
 from media_player import MediaPlayer
 
 logger = logging.getLogger(__name__)
 
 # Default MoOde HTTP API endpoint
 MOODE_DEFAULT_URL = "http://localhost/engine-mpd.php"
+
+# Minimum interval (seconds) between HTTP polls to avoid excessive API load.
+# Main loop may call receive_message() frequently (~10 times/second with 0.1s timeout),
+# but we throttle actual HTTP requests to this interval.
+MIN_POLL_INTERVAL = 1.0
 
 
 class MoodeClient(MediaPlayer):
@@ -40,6 +47,7 @@ class MoodeClient(MediaPlayer):
         self.url = url
         self._connected = False
         self._last_state: dict | None = None
+        self._last_poll_time: float = 0.0  # Track time of last HTTP poll
         self._base_url = self._extract_base_url(url)
 
     def _extract_base_url(self, url: str) -> str:
@@ -51,10 +59,8 @@ class MoodeClient(MediaPlayer):
         Returns:
             Base URL for relative paths (e.g., http://localhost)
         """
-        # Remove the script path to get base URL
-        parts = url.split('/')
-        # Reconstruct: http://localhost
-        return f"{parts[0]}//{parts[2]}"
+        parsed = urlparse(url)
+        return f"{parsed.scheme}://{parsed.netloc}"
 
     def connect(self) -> bool:
         """Test connection to MoOde HTTP API.
@@ -70,6 +76,7 @@ class MoodeClient(MediaPlayer):
             # Verify response is valid JSON
             response.json()
             self._connected = True
+            self._last_poll_time = 0.0  # Reset to allow immediate first poll
             logger.info(f"Connected to MoOde at {self.url}")
             return True
         except (requests.RequestException, json.JSONDecodeError) as e:
@@ -81,17 +88,29 @@ class MoodeClient(MediaPlayer):
         """Poll MoOde for current playback state.
 
         Fetches the current state from the MoOde API and returns it only if
-        it differs from the last polled state (change detection).
+        it differs from the last polled state (change detection). Automatically
+        rate-limits HTTP requests to avoid excessive API load even when called
+        frequently by the main loop.
 
         Args:
             timeout: Timeout in seconds for the HTTP request.
 
         Returns:
             A state dictionary when playback state has changed, or None if
-            unchanged or unreachable. Returns None if not connected.
+            unchanged or unreachable. Returns None if not connected or if
+            minimum poll interval has not elapsed to rate-limit API requests.
         """
         if not self._connected:
             return None
+
+        # Rate-limit: only poll HTTP API if minimum interval has elapsed
+        # Main loop may call this ~10 times/second, but we throttle actual
+        # network requests to avoid unnecessary load on MoOde API.
+        now = time.time()
+        if now - self._last_poll_time < MIN_POLL_INTERVAL:
+            return None
+        
+        self._last_poll_time = now
 
         try:
             response = requests.get(self.url, timeout=timeout)
@@ -124,16 +143,25 @@ class MoodeClient(MediaPlayer):
             Normalized state dictionary ready for display/rendering.
         """
         # Extract and convert numeric fields
-        elapsed = raw_state.get("elapsed", "")
+        elapsed = raw_state.get("elapsed")
         seek = None
-        if elapsed and str(elapsed).isdigit():
-            seek = int(elapsed)
+        if elapsed is not None:
+            try:
+                # MoOde reports elapsed time in seconds; normalize to milliseconds
+                # to match Volumio/app schema used by renderer and seek interpolation
+                elapsed_seconds = float(elapsed)
+                seek = int(elapsed_seconds * 1000)
+            except (ValueError, TypeError):
+                pass
 
         time = raw_state.get("time")
         duration = None
         if time is not None:
             try:
-                duration = int(time) if isinstance(time, (int, float)) else int(time)
+                # MoOde reports duration in seconds; normalize to milliseconds
+                # to match Volumio/app schema
+                duration_seconds = float(time)
+                duration = int(duration_seconds * 1000)
             except (ValueError, TypeError):
                 pass
 
@@ -184,3 +212,4 @@ class MoodeClient(MediaPlayer):
         """
         self._connected = False
         self._last_state = None
+        self._last_poll_time = 0.0

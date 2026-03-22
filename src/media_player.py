@@ -51,3 +51,15 @@ class MediaPlayer(ABC):
     def close(self) -> None:
         """Close the connection gracefully."""
         ...
+
+    def get_state(self) -> None:
+        """Request a state update from the media player (optional).
+
+        Some media players (e.g., Volumio) benefit from explicit state
+        requests periodically. Others (e.g., MoOde) handle state updates
+        passively via polling and don't need this.
+
+        Concrete subclasses can override to request state if applicable.
+        Default implementation is a safe no-op.
+        """
+        pass

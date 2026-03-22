@@ -154,12 +154,13 @@ def test_moode_client_receive_message_returns_state(moode_client, moode_response
         assert state["artist"] == "Koz"
         assert state["album"] == "Stereo Test"
         assert state["status"] == "play"
-        assert state["seek"] == 45
-        assert state["duration"] == 128
+        assert state["seek"] == 45000  # 45 seconds in milliseconds
+        assert state["duration"] == 128000  # 128 seconds in milliseconds
 
 
 def test_moode_client_change_detection(moode_client, moode_response_playing, moode_response_paused):
     """MoodeClient only returns state when it changes (change detection)."""
+    import time
     moode_client._connected = True
 
     with patch('moode.requests.get') as mock_get:
@@ -171,10 +172,12 @@ def test_moode_client_change_detection(moode_client, moode_response_playing, moo
         state1 = moode_client.receive_message(timeout=1.0)
         assert state1 is not None
 
-        # Second identical poll: returns None (no change)
-        mock_response.json.return_value = moode_response_playing  # same state
+        # Second identical poll: should be rate-limited (no HTTP request)
         state2 = moode_client.receive_message(timeout=1.0)
         assert state2 is None
+
+        # Wait for rate-limit interval to pass
+        time.sleep(1.1)
 
         # Third poll with different state: returns new state
         mock_response.json.return_value = moode_response_paused
@@ -191,8 +194,8 @@ def test_moode_client_normalize_state_playing(moode_client, moode_response_playi
     assert normalized["artist"] == "Koz"
     assert normalized["album"] == "Stereo Test"
     assert normalized["status"] == "play"
-    assert normalized["seek"] == 45
-    assert normalized["duration"] == 128
+    assert normalized["seek"] == 45000  # 45 seconds in milliseconds
+    assert normalized["duration"] == 128000  # 128 seconds in milliseconds
     assert normalized["quality"] == "FLAC 16/48 kHz, 2ch"
     assert normalized["volume"] == 100
 
@@ -206,6 +209,20 @@ def test_moode_client_normalize_state_stopped(moode_client, moode_response_stopp
     assert normalized["artist"] == ""
     assert normalized["seek"] is None
     assert normalized["duration"] is None
+
+
+def test_moode_client_normalize_state_paused(moode_client, moode_response_paused):
+    """State normalization handles paused state with seek and duration."""
+    normalized = moode_client._normalize_state(moode_response_paused)
+
+    assert normalized["title"] == "Test Track"
+    assert normalized["artist"] == "Test Artist"
+    assert normalized["album"] == "Test Album"
+    assert normalized["status"] == "pause"
+    assert normalized["seek"] == 30000  # 30 seconds in milliseconds
+    assert normalized["duration"] == 200000  # 200 seconds in milliseconds
+    assert normalized["quality"] == "MP3 44.1 kHz, 2ch"
+    assert normalized["volume"] == 80
 
 
 def test_moode_client_empty_elapsed_returns_none_seek(moode_client):
@@ -292,3 +309,62 @@ def test_moode_client_custom_url():
     from moode import MoodeClient
     client = MoodeClient(url="ws://192.168.1.50/moode")
     assert client.url == "ws://192.168.1.50/moode"
+
+
+def test_moode_client_rate_limiting(moode_client, moode_response_playing):
+    """Rapid receive_message() calls are rate-limited to avoid excessive HTTP requests."""
+    import time
+    from unittest.mock import patch
+    
+    moode_client._connected = True
+    
+    with patch('moode.requests.get') as mock_get:
+        mock_response = MagicMock()
+        mock_response.json.return_value = moode_response_playing
+        mock_get.return_value = mock_response
+        
+        # First call should make HTTP request
+        state1 = moode_client.receive_message(timeout=0.1)
+        assert state1 is not None
+        assert mock_get.call_count == 1
+        
+        # Rapid second call should NOT make HTTP request (rate-limited)
+        state2 = moode_client.receive_message(timeout=0.1)
+        assert state2 is None  # No state change (we were rate-limited)
+        assert mock_get.call_count == 1  # Still only 1 HTTP request
+        
+        # Wait for rate-limit interval, then next call should make HTTP request
+        time.sleep(1.1)
+        state3 = moode_client.receive_message(timeout=0.1)
+        # state3 is None because nothing changed, but HTTP request was made
+        assert mock_get.call_count == 2  # Now 2 HTTP requests
+
+
+def test_moode_client_poll_time_reset_on_connect(moode_client, moode_response_playing):
+    """connect() resets poll time to allow immediate first poll."""
+    from unittest.mock import patch
+    
+    moode_client._last_poll_time = 100.0  # Simulate old poll time
+    
+    with patch('moode.requests.get') as mock_get:
+        mock_response = MagicMock()
+        mock_response.json.return_value = moode_response_playing
+        mock_get.return_value = mock_response
+        
+        moode_client.connect()
+        
+        # Poll time should be reset to 0.0
+        assert moode_client._last_poll_time == 0.0
+        
+        # First receive_message after connect should work immediately
+        state = moode_client.receive_message(timeout=0.1)
+        assert state is not None  # Should get state without waiting
+
+
+def test_moode_client_poll_time_reset_on_close(moode_client):
+    """close() resets poll time."""
+    moode_client._last_poll_time = 100.0
+    
+    moode_client.close()
+    
+    assert moode_client._last_poll_time == 0.0
