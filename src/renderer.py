@@ -34,6 +34,7 @@ class Backlight:
                     self.max_brightness = 255
                 logger.info(f"Backlight found at {path}, max brightness: {self.max_brightness}")
                 return
+        logger.warning("No backlight interface found. Brightness control disabled.")
     
     def set_brightness(self, level):
         """Sets brightness level (0-255 scale)."""
@@ -45,6 +46,7 @@ class Backlight:
         try:
             with open(self.brightness_path, 'w') as f:
                 f.write(str(scaled_level))
+            logger.debug(f"Backlight set to {level} (scaled: {scaled_level})")
         except Exception as e:
             logger.warning(f"Could not set backlight: {e}")
 
