@@ -1,28 +1,17 @@
 #!/usr/bin/env python3
 import time
-import os
 import signal
 import sys
 import logging
+from urllib.parse import urlparse
 from renderer import Renderer
 from media_player import MediaPlayer
 from volumio import VolumioClient
+from config import Config
 
 # --- LOGGING CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-# --- SETTINGS ---
-WIDTH, HEIGHT = 480, 320
-FB_DEVICE = os.getenv("FB_DEVICE", "/dev/fb0")
-VOLUMIO_URL = os.getenv("VOLUMIO_URL", "ws://localhost:3000/socket.io/?EIO=3&transport=websocket")
-COLOR_FORMAT = os.getenv("COLOR_FORMAT", "RGB565")
-# Select which media player OS to use: ``volumio`` (default), ``moode``, ``picore``
-MEDIA_PLAYER_TYPE = os.getenv("MEDIA_PLAYER", "volumio")
-
-CYCLE_TIME = 30
-# Standby time in seconds (default: 600 = 10 minutes)
-STANDBY_TIMEOUT = int(os.getenv("STANDBY_TIMEOUT", 600))
 
 # Global State
 last_state = None
@@ -38,14 +27,18 @@ is_sleeping = False
 is_showing_idle = False    # Tracks if idle screen is currently displayed
 
 # Global objects
+config = None
 renderer = None
 volumio = None
 
-def detect_media_player() -> MediaPlayer:
+def detect_media_player(cfg: Config) -> MediaPlayer:
     """Detect and instantiate the correct media player client.
 
-    Reads the ``MEDIA_PLAYER`` environment variable (default: ``volumio``)
-    and returns the appropriate :class:`MediaPlayer` implementation.
+    Reads the ``MEDIA_PLAYER`` configuration setting and returns the
+    appropriate :class:`MediaPlayer` implementation.
+
+    Args:
+        cfg: Configuration object specifying which media player to use.
 
     Supported values:
         - ``volumio``  — Volumio (default)
@@ -55,24 +48,22 @@ def detect_media_player() -> MediaPlayer:
     Returns:
         A concrete :class:`MediaPlayer` instance ready to be connected.
     """
-    player_type = MEDIA_PLAYER_TYPE.lower()
+    player_type = cfg.media_player_type
     logger.info(f"Media player type: '{player_type}'")
 
     if player_type == 'moode':
         from moode import MoodeClient
-        url = os.getenv("MOODE_URL", "ws://localhost/moode")
-        logger.info(f"Using MoOde client at {url}")
-        return MoodeClient(url)
+        logger.info(f"Using MoOde client at {cfg.moode_url}")
+        return MoodeClient(cfg.moode_url)
 
     if player_type == 'picore':
         from picore_player import PiCorePlayerClient
-        url = os.getenv("LMS_URL", "ws://localhost:9000")
-        logger.info(f"Using piCorePlayer client at {url}")
-        return PiCorePlayerClient(url)
+        logger.info(f"Using piCorePlayer client at {cfg.lms_url}")
+        return PiCorePlayerClient(cfg.lms_url)
 
     # Default: Volumio
-    logger.info(f"Using Volumio client at {VOLUMIO_URL}")
-    return VolumioClient(VOLUMIO_URL)
+    logger.info(f"Using Volumio client at {cfg.volumio_url}")
+    return VolumioClient(cfg.volumio_url)
 
 def states_are_equal(s1, s2):
     """Compares two states to see if visible fields have changed."""
@@ -121,7 +112,12 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 def main():
-    global last_state, last_rendered_state, last_rendered_mode, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_volumio_timestamp, last_volumio_seek, is_sleeping, is_showing_idle, renderer, volumio
+    global last_state, last_rendered_state, last_rendered_mode, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_volumio_timestamp, last_volumio_seek, is_sleeping, is_showing_idle, config, renderer, volumio
+    
+    # Initialize configuration (moved here to avoid side effects at import time)
+    config = Config()
+    config.validate()
+    config.log_config()
     
     logger.info("SPI Now Playing - Starting...")
     
@@ -130,16 +126,24 @@ def main():
     time.sleep(3)
     
     # Initialize modules
-    # Extract Volumio host for renderer to fetch album art
+    # Extract Volumio host for renderer to fetch album art.
+    # Note: Album art caching via Volumio API only works with Volumio, not MoOde or piCorePlayer.
     volumio_host = "localhost"
-    try:
-        # Example: ws://192.168.1.10:3000/... -> 192.168.1.10
-        volumio_host = VOLUMIO_URL.split("://")[1].split(":")[0]
-    except:
-        pass
+    if config.media_player_type == "volumio":
+        try:
+            parsed = urlparse(config.volumio_url)
+            if parsed.hostname:
+                volumio_host = parsed.hostname
+                logger.info(f"Extracted Volumio hostname: {volumio_host}")
+        except Exception as e:
+            logger.warning(f"Failed to parse Volumio URL: {e}. Using localhost.")
 
-    renderer = Renderer(WIDTH, HEIGHT, FB_DEVICE, COLOR_FORMAT, volumio_host=volumio_host)
-    volumio = detect_media_player()
+    renderer = Renderer(
+        config.display_width, config.display_height,
+        config.framebuffer_device, config.color_format,
+        volumio_host=volumio_host
+    )
+    volumio = detect_media_player(config)
     
     # Disable the blinking cursor on the framebuffer console
     disable_cursor()
@@ -156,7 +160,7 @@ def main():
 
     while True:
         try:
-            logger.info(f"Connecting to media player ({MEDIA_PLAYER_TYPE})...")
+            logger.info(f"Connecting to media player ({config.media_player_type})...")
             if not volumio.connect():
                 time.sleep(5)
                 continue
@@ -214,13 +218,13 @@ def main():
                 # --- HANDLE IDLE/STANDBY STATES ---
                 
                 # If stopped or paused, show idle screen after a short timeout
-                # or clear screen after a long timeout (STANDBY_TIMEOUT)
+                # or clear screen after a long timeout (config.standby_timeout)
                 
                 if last_state.get('status') != 'play':
-                    # If stopped or paused for more than STANDBY_TIMEOUT, clear screen (standby)
-                    if now - last_active_time > STANDBY_TIMEOUT:
+                    # If stopped or paused for more than standby_timeout, clear screen (standby)
+                    if now - last_active_time > config.standby_timeout:
                         if not is_sleeping:
-                            logger.info(f"Inactive for {STANDBY_TIMEOUT}s. Entering standby.")
+                            logger.info(f"Inactive for {config.standby_timeout}s. Entering standby.")
                             renderer.clear()
                             is_sleeping = True
                             is_showing_idle = False
@@ -253,7 +257,7 @@ def main():
                 
                 # Automatic mode switching while playing
                 if last_state.get('status') == 'play':
-                    if now - last_cycle_time > CYCLE_TIME:
+                    if now - last_cycle_time > config.mode_cycle_time:
                         show_capa_mode = not show_capa_mode
                         last_cycle_time = now
                         logger.info(f"Switching to {'cover' if show_capa_mode else 'text'} mode...")
