@@ -181,91 +181,22 @@ class MoodeClient(MediaPlayer):
         return is_active
 
     def _get_airplay_metadata(self) -> dict | None:
-        """Read metadata from shairport-sync for currently playing stream.
-
-        Shairport-sync writes metadata to /tmp/shairport-sync-metadata in a
-        key=value format. This method parses it and caches the result to avoid
-        re-parsing on every call.
-
-        Supported metadata keys from shairport-sync:
-        - artist, title, album, songalbumartist, artwork
-
+        """Read metadata for AirPlay streaming (currently returns None).
+        
+        Note: Shairport-sync writes metadata to /tmp/shairport-sync-metadata as a
+        FIFO (named pipe) in iTunes XML format. Reading from FIFOs is problematic:
+        - Blocking reads hang the service if writer isn't active
+        - Format requires plist parsing, not simple key=value
+        
+        For now, we return None and rely on MoOde's API metadata, even if stale.
+        The important fix is that we override status from "stop" to "play" when
+        AirPlay is detected - that enables music display instead of idle screen.
+        
         Returns:
-            Dictionary with parsed metadata (title, artist, album) or None
-            if metadata file is not available or empty.
+            None (metadata not available from FIFO)
         """
-        try:
-            if not os.path.exists(SHAIRPORT_METADATA_FILE):
-                logger.info(f"⚠ Metadata FIFO does not exist: {SHAIRPORT_METADATA_FILE}")
-                _METADATA_CACHE["data"] = None
-                return None
-
-            # Check if file was modified since last read
-            try:
-                mtime = os.path.getmtime(SHAIRPORT_METADATA_FILE)
-                if mtime == _METADATA_CACHE["mtime"] and _METADATA_CACHE["data"] is not None:
-                    # File hasn't changed, return cached data
-                    logger.debug(f"Using cached metadata")
-                    return _METADATA_CACHE["data"]
-            except OSError:
-                pass
-
-            logger.info("Attempting to read shairport metadata FIFO...")
-            with open(SHAIRPORT_METADATA_FILE, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read().strip()
-
-            logger.info(f"Read {len(content)} bytes from metadata FIFO")
-            if not content:
-                logger.info("Metadata FIFO is empty")
-                _METADATA_CACHE["data"] = None
-                return None
-
-            # Parse shairport-sync metadata format: key=value pairs
-            metadata = {}
-            lines_parsed = 0
-            for line in content.split("\n"):
-                line = line.strip()
-                if not line or "=" not in line:
-                    continue
-
-                try:
-                    key, value = line.split("=", 1)
-                    key = key.strip().lower()
-                    value = value.strip()
-                    
-                    # Map shairport keys to our standard schema
-                    if key == "artist" and value:
-                        metadata["artist"] = value
-                    elif key == "title" and value:
-                        metadata["title"] = value
-                    elif key == "album" and value:
-                        metadata["album"] = value
-                    elif key == "songalbumartist" and value:
-                        metadata["albumartist"] = value
-                    
-                    lines_parsed += 1
-                except (ValueError, AttributeError) as e:
-                    logger.debug(f"Error parsing metadata line '{line}': {e}")
-                    continue
-
-            if metadata:
-                logger.debug(f"Parsed metadata from file ({lines_parsed} lines): {metadata}")
-                # Update cache
-                try:
-                    _METADATA_CACHE["mtime"] = os.path.getmtime(SHAIRPORT_METADATA_FILE)
-                except OSError:
-                    _METADATA_CACHE["mtime"] = 0
-                _METADATA_CACHE["data"] = metadata
-                return metadata
-            else:
-                logger.debug(f"Metadata file has no valid entries ({lines_parsed} lines parsed)")
-                _METADATA_CACHE["data"] = None
-                return None
-                
-        except Exception as e:
-            logger.debug(f"Error reading metadata file: {e}")
-            _METADATA_CACHE["data"] = None
-            return None
+        logger.info("⚠ Metadata FIFO reading not implemented (blocking read issue)")
+        return None
 
     def connect(self) -> bool:
         """Test connection to MoOde HTTP API.
