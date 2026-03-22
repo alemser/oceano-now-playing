@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from renderer import Renderer
 from media_player import MediaPlayer
 from volumio import VolumioClient
+from moode import MoodeClient
 from config import Config
 
 # --- LOGGING CONFIGURATION ---
@@ -74,12 +75,9 @@ def auto_detect_media_player(cfg: Config) -> MediaPlayer:
     Attempts to connect to each supported media player in sequence with a
     timeout. Returns the first player that responds successfully.
 
-    Currently only Volumio is auto-detected via WebSocket probing. MoOde and
-    piCorePlayer stubs are not included in auto-detection until their connect()
-    methods are implemented.
-
     Probing order:
         1. Volumio (ws://localhost:3000)
+        2. MoOde (http://localhost/engine-mpd.php)
 
     Args:
         cfg: Configuration object with media player URLs.
@@ -90,20 +88,15 @@ def auto_detect_media_player(cfg: Config) -> MediaPlayer:
         if detection fails.
 
     Note:
-        Each probe has a 3-second timeout. Future implementations of MoOde and
-        piCorePlayer clients can be added to the candidates list once their
-        connect() methods are functional.
+        Each probe has a 3-second timeout. piCorePlayer is not included until
+        its connect() method is implemented.
     """
     logger.info("Auto-detecting media player...")
     
-    # Only Volumio is currently implemented for auto-detection.
-    # MoOde and piCorePlayer clients are stubs (connect() returns False),
-    # so they are omitted from the candidates list to avoid wasting time
-    # probing services that can never be detected until their implementations
-    # are completed.
+    # Probing order: try most responsive services first
     candidates = [
         ('volumio', cfg.volumio_url, VolumioClient),
-        # TODO: Add MoOde once MoodeClient.connect() is implemented
+        ('moode', cfg.moode_url, MoodeClient),
         # TODO: Add piCorePlayer once PiCorePlayerClient.connect() is implemented
     ]
     
@@ -151,13 +144,13 @@ def detect_media_player(cfg: Config) -> MediaPlayer:
     """Detect and instantiate the correct media player client.
 
     If MEDIA_PLAYER is set to 'auto', attempts auto-detection by probing
-    Volumio. Otherwise uses the explicitly configured player.
+    Volumio and MoOde. Otherwise uses the explicitly configured player.
 
     Args:
         cfg: Configuration object specifying which media player to use.
 
     Supported values for MEDIA_PLAYER:
-        - ``auto``     — Auto-detect (probe Volumio only; MoOde/piCore need implementation)
+        - ``auto``     — Auto-detect (probe Volumio → MoOde; piCore TBD)
         - ``volumio``  — Volumio (default if not set)
         - ``moode``    — MoOde Audio
         - ``picore``   — piCorePlayer / LMS

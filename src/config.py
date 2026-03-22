@@ -30,7 +30,7 @@ class Config:
     # Media player
     media_player_type: str = "volumio"
     volumio_url: str = "ws://localhost:3000/socket.io/?EIO=3&transport=websocket"
-    moode_url: str = "ws://localhost/moode"
+    moode_url: str = "http://localhost/engine-mpd.php"
     lms_url: str = "ws://localhost:9000"
 
     # Timing (seconds)
