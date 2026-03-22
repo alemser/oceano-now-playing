@@ -1,14 +1,10 @@
 # Image processing and hardware interaction
-Pillow
-numpy
-spidev
-gpiozero
-RPi.GPIO
+Pillow>=10.0.0
+numpy>=1.24.0
+spidev>=3.5
+gpiozero>=2.0.0
+RPi.GPIO>=0.7.0
 
 # Volumio Communication
-requests
-websocket-client
-
-# Testing (dev only)
-pytest
-pytest-mock
+requests>=2.31.0
+websocket-client>=1.6.0

@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spi-now-playing"
+version = "0.1.0"
+description = "Display Volumio's playing status on an SPI-connected display for Raspberry Pi"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "alemser", email = "alemser@example.com"}
+]
+keywords = ["volumio", "raspberry-pi", "spi-display", "framebuffer", "music"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+
+dependencies = [
+    # Image processing and hardware interaction
+    "Pillow>=10.0.0",
+    "numpy>=1.24.0",
+    "spidev>=3.5",
+    "gpiozero>=2.0.0",
+    "RPi.GPIO>=0.7.0",
+    # Volumio Communication
+    "requests>=2.31.0",
+    "websocket-client>=1.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-mock>=3.15.1",
+]
+
+# Uncomment for future improvements
+# quality = [
+#     "ruff>=0.1.8",
+#     "mypy>=1.7.1",
+# ]
+# all = ["spi-now-playing[dev,quality]"]
+
+[project.urls]
+Homepage = "https://github.com/alemser/spi-now-playing"
+Repository = "https://github.com/alemser/spi-now-playing.git"
+Issues = "https://github.com/alemser/spi-now-playing/issues"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# Optional: Configure ruff for code linting
+# [tool.ruff]
+# line-length = 100
+# target-version = "py38"
+# select = ["E", "F", "W"]
+# ignore = ["E501"]  # Ignore line too long (we handle it with line-length)

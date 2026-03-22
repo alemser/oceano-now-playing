@@ -1,0 +1,10 @@
+# Development & Testing Dependencies
+# Install with: pip install -r requirements-dev.txt
+
+# Testing framework
+pytest==8.4.2
+pytest-mock==3.15.1
+
+# Code quality (optional, recommended for future)
+# ruff==0.1.8
+# mypy==1.7.1

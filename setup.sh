@@ -36,7 +36,8 @@ echo ""
 # Install dependencies
 echo "Installing dependencies..."
 pip install -r requirements.txt
-echo "✅ Dependencies installed"
+pip install -r requirements-dev.txt
+echo "✅ Dependencies installed (runtime + development)"
 echo ""
 
 # Install git hooks
