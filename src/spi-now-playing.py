@@ -4,8 +4,6 @@ import os
 import signal
 import sys
 import logging
-import subprocess
-from typing import Optional, Dict, Any
 from renderer import Renderer
 from volumio import VolumioClient
 
@@ -40,7 +38,7 @@ is_showing_idle = False    # Tracks if idle screen is currently displayed
 renderer = None
 volumio = None
 
-def states_are_equal(s1: Optional[Dict[str, Any]], s2: Optional[Dict[str, Any]]) -> bool:
+def states_are_equal(s1, s2):
     """Compares two states to see if visible fields have changed."""
     if s1 is None or s2 is None:
         return s1 == s2
@@ -51,31 +49,27 @@ def states_are_equal(s1: Optional[Dict[str, Any]], s2: Optional[Dict[str, Any]])
             return False
     return True
 
-def disable_cursor() -> None:
+def disable_cursor():
     """Disables the blinking cursor on the framebuffer console using ANSI escape codes."""
     for tty in ['tty0', 'tty1', 'tty2', 'console']:
         try:
             with open(f'/dev/{tty}', 'w') as f:
                 f.write('\033[?25l')  # ANSI escape code to hide cursor
                 f.flush()
-        except (OSError, IOError) as e:
-            logger.debug(f"Could not hide cursor on /dev/{tty}: {e}")
-        except Exception as e:
-            logger.warning(f"Unexpected error hiding cursor on /dev/{tty}: {e}")
+        except:
+            pass
 
-def enable_cursor() -> None:
+def enable_cursor():
     """Re-enables the cursor on exit using ANSI escape codes."""
     for tty in ['tty0', 'tty1', 'tty2', 'console']:
         try:
             with open(f'/dev/{tty}', 'w') as f:
                 f.write('\033[?25h')  # ANSI escape code to show cursor
                 f.flush()
-        except (OSError, IOError) as e:
-            logger.debug(f"Could not restore cursor on /dev/{tty}: {e}")
-        except Exception as e:
-            logger.warning(f"Unexpected error restoring cursor on /dev/{tty}: {e}")
+        except:
+            pass
 
-def signal_handler(sig: int, frame: Any) -> None:
+def signal_handler(sig, frame):
     logger.info("Exiting application...")
     # Re-enable the cursor on exit
     enable_cursor()
@@ -90,7 +84,7 @@ def signal_handler(sig: int, frame: Any) -> None:
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-def main() -> None:
+def main():
     global last_state, last_rendered_state, last_rendered_mode, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_volumio_timestamp, last_volumio_seek, is_sleeping, is_showing_idle, renderer, volumio
     
     logger.info("SPI Now Playing - Starting...")
@@ -105,8 +99,8 @@ def main() -> None:
     try:
         # Example: ws://192.168.1.10:3000/... -> 192.168.1.10
         volumio_host = VOLUMIO_URL.split("://")[1].split(":")[0]
-    except (IndexError, AttributeError) as e:
-        logger.warning(f"Could not parse Volumio host from {VOLUMIO_URL}: {e}, using localhost")
+    except:
+        pass
 
     renderer = Renderer(WIDTH, HEIGHT, FB_DEVICE, COLOR_FORMAT, volumio_host=volumio_host)
     volumio = VolumioClient(VOLUMIO_URL)
