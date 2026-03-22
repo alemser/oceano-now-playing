@@ -1,9 +1,12 @@
-"""Tests for the MediaPlayer abstract base class and VolumioClient inheritance.
+"""Tests for the MediaPlayer abstract base class, VolumioClient inheritance,
+and the detect_media_player() factory function.
 
 Verifies that:
 - MediaPlayer cannot be instantiated directly (it is abstract)
 - VolumioClient is a subclass of MediaPlayer
 - All required abstract methods are implemented by VolumioClient
+- detect_media_player() returns the correct implementation for each
+  value of the MEDIA_PLAYER environment variable
 """
 
 import pytest
@@ -100,3 +103,74 @@ def test_concrete_subclass_with_all_methods_can_be_instantiated(media_player_cla
     assert player.receive_message(1.0) is None
     assert player.is_connected() is False
     player.close()  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# detect_media_player() factory tests
+# ---------------------------------------------------------------------------
+
+def _load_detect_function(monkeypatch, mock_ws_module):
+    """Helper: inject websocket mock and return detect_media_player.
+
+    The main module reads MEDIA_PLAYER_TYPE at import time, so the module
+    must be reloaded after setting the environment variable to pick up the
+    new value.
+    """
+    monkeypatch.setitem(sys.modules, 'websocket', mock_ws_module)
+    for mod in ('volumio', 'moode', 'picore_player', 'spi_now_playing'):
+        sys.modules.pop(mod, None)
+    # The main module uses a hyphen in its filename; import via importlib
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'spi_now_playing',
+        os.path.join(os.path.dirname(__file__), '..', 'src', 'spi-now-playing.py')
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.detect_media_player
+
+
+def test_detect_media_player_default_returns_volumio(monkeypatch):
+    """detect_media_player() returns a VolumioClient when MEDIA_PLAYER is unset."""
+    monkeypatch.delenv('MEDIA_PLAYER', raising=False)
+    mock_ws_module = MagicMock()
+    mock_ws_module.WebSocketException = Exception
+    mock_ws_module.create_connection = MagicMock()
+    fn = _load_detect_function(monkeypatch, mock_ws_module)
+    from volumio import VolumioClient
+    player = fn()
+    assert isinstance(player, VolumioClient)
+
+
+def test_detect_media_player_volumio_explicit(monkeypatch):
+    """detect_media_player() returns a VolumioClient when MEDIA_PLAYER=volumio."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'volumio')
+    mock_ws_module = MagicMock()
+    mock_ws_module.WebSocketException = Exception
+    mock_ws_module.create_connection = MagicMock()
+    fn = _load_detect_function(monkeypatch, mock_ws_module)
+    from volumio import VolumioClient
+    player = fn()
+    assert isinstance(player, VolumioClient)
+
+
+def test_detect_media_player_moode(monkeypatch):
+    """detect_media_player() returns a MoodeClient when MEDIA_PLAYER=moode."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'moode')
+    mock_ws_module = MagicMock()
+    mock_ws_module.WebSocketException = Exception
+    fn = _load_detect_function(monkeypatch, mock_ws_module)
+    from moode import MoodeClient
+    player = fn()
+    assert isinstance(player, MoodeClient)
+
+
+def test_detect_media_player_picore(monkeypatch):
+    """detect_media_player() returns a PiCorePlayerClient when MEDIA_PLAYER=picore."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'picore')
+    mock_ws_module = MagicMock()
+    mock_ws_module.WebSocketException = Exception
+    fn = _load_detect_function(monkeypatch, mock_ws_module)
+    from picore_player import PiCorePlayerClient
+    player = fn()
+    assert isinstance(player, PiCorePlayerClient)
