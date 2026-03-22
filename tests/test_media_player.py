@@ -110,24 +110,39 @@ def test_concrete_subclass_with_all_methods_can_be_instantiated(media_player_cla
 # ---------------------------------------------------------------------------
 
 def _load_detect_function(monkeypatch, mock_ws_module):
-    """Helper: inject websocket mock and return detect_media_player.
+    """Helper: inject websocket mock and return detect_media_player function with Config.
 
-    The main module reads MEDIA_PLAYER_TYPE at import time, so the module
-    must be reloaded after setting the environment variable to pick up the
-    new value.
+    The config is instantiated at runtime in main(), so we need to create a Config
+    object here and pass it to detect_media_player(cfg).
+    
+    Returns:
+        A tuple of (detect_media_player_function, Config_object)
     """
     monkeypatch.setitem(sys.modules, 'websocket', mock_ws_module)
-    for mod in ('volumio', 'moode', 'picore_player', 'spi_now_playing'):
+    for mod in ('volumio', 'moode', 'picore_player', 'config', 'spi_now_playing'):
         sys.modules.pop(mod, None)
-    # The main module uses a hyphen in its filename; import via importlib
+    
+    # Import config module (not spi_now_playing yet)
     import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'config',
+        os.path.join(os.path.dirname(__file__), '..', 'src', 'config.py')
+    )
+    config_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config_module)
+    
+    # Now import the main module
     spec = importlib.util.spec_from_file_location(
         'spi_now_playing',
         os.path.join(os.path.dirname(__file__), '..', 'src', 'spi-now-playing.py')
     )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.detect_media_player
+    main_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(main_module)
+    
+    # Create a config object (which picks up env vars via __post_init__)
+    cfg = config_module.Config()
+    
+    return main_module.detect_media_player, cfg
 
 
 def test_detect_media_player_default_returns_volumio(monkeypatch):
@@ -136,9 +151,9 @@ def test_detect_media_player_default_returns_volumio(monkeypatch):
     mock_ws_module = MagicMock()
     mock_ws_module.WebSocketException = Exception
     mock_ws_module.create_connection = MagicMock()
-    fn = _load_detect_function(monkeypatch, mock_ws_module)
+    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
     from volumio import VolumioClient
-    player = fn()
+    player = fn(cfg)
     assert isinstance(player, VolumioClient)
 
 
@@ -148,9 +163,9 @@ def test_detect_media_player_volumio_explicit(monkeypatch):
     mock_ws_module = MagicMock()
     mock_ws_module.WebSocketException = Exception
     mock_ws_module.create_connection = MagicMock()
-    fn = _load_detect_function(monkeypatch, mock_ws_module)
+    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
     from volumio import VolumioClient
-    player = fn()
+    player = fn(cfg)
     assert isinstance(player, VolumioClient)
 
 
@@ -159,9 +174,9 @@ def test_detect_media_player_moode(monkeypatch):
     monkeypatch.setenv('MEDIA_PLAYER', 'moode')
     mock_ws_module = MagicMock()
     mock_ws_module.WebSocketException = Exception
-    fn = _load_detect_function(monkeypatch, mock_ws_module)
+    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
     from moode import MoodeClient
-    player = fn()
+    player = fn(cfg)
     assert isinstance(player, MoodeClient)
 
 
@@ -170,7 +185,7 @@ def test_detect_media_player_picore(monkeypatch):
     monkeypatch.setenv('MEDIA_PLAYER', 'picore')
     mock_ws_module = MagicMock()
     mock_ws_module.WebSocketException = Exception
-    fn = _load_detect_function(monkeypatch, mock_ws_module)
+    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
     from picore_player import PiCorePlayerClient
-    player = fn()
+    player = fn(cfg)
     assert isinstance(player, PiCorePlayerClient)

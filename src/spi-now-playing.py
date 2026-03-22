@@ -3,6 +3,7 @@ import time
 import signal
 import sys
 import logging
+from urllib.parse import urlparse
 from renderer import Renderer
 from media_player import MediaPlayer
 from volumio import VolumioClient
@@ -11,11 +12,6 @@ from config import Config
 # --- LOGGING CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-# --- CONFIGURATION ---
-config = Config()
-config.validate()
-config.log_config()
 
 # Global State
 last_state = None
@@ -31,14 +27,18 @@ is_sleeping = False
 is_showing_idle = False    # Tracks if idle screen is currently displayed
 
 # Global objects
+config = None
 renderer = None
 volumio = None
 
-def detect_media_player() -> MediaPlayer:
+def detect_media_player(cfg: Config) -> MediaPlayer:
     """Detect and instantiate the correct media player client.
 
-    Reads the ``MEDIA_PLAYER`` environment variable (default: ``volumio``)
-    and returns the appropriate :class:`MediaPlayer` implementation.
+    Reads the ``MEDIA_PLAYER`` configuration setting and returns the
+    appropriate :class:`MediaPlayer` implementation.
+
+    Args:
+        cfg: Configuration object specifying which media player to use.
 
     Supported values:
         - ``volumio``  — Volumio (default)
@@ -48,22 +48,22 @@ def detect_media_player() -> MediaPlayer:
     Returns:
         A concrete :class:`MediaPlayer` instance ready to be connected.
     """
-    player_type = config.media_player_type
+    player_type = cfg.media_player_type
     logger.info(f"Media player type: '{player_type}'")
 
     if player_type == 'moode':
         from moode import MoodeClient
-        logger.info(f"Using MoOde client at {config.moode_url}")
-        return MoodeClient(config.moode_url)
+        logger.info(f"Using MoOde client at {cfg.moode_url}")
+        return MoodeClient(cfg.moode_url)
 
     if player_type == 'picore':
         from picore_player import PiCorePlayerClient
-        logger.info(f"Using piCorePlayer client at {config.lms_url}")
-        return PiCorePlayerClient(config.lms_url)
+        logger.info(f"Using piCorePlayer client at {cfg.lms_url}")
+        return PiCorePlayerClient(cfg.lms_url)
 
     # Default: Volumio
-    logger.info(f"Using Volumio client at {config.volumio_url}")
-    return VolumioClient(config.volumio_url)
+    logger.info(f"Using Volumio client at {cfg.volumio_url}")
+    return VolumioClient(cfg.volumio_url)
 
 def states_are_equal(s1, s2):
     """Compares two states to see if visible fields have changed."""
@@ -112,7 +112,12 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 def main():
-    global last_state, last_rendered_state, last_rendered_mode, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_volumio_timestamp, last_volumio_seek, is_sleeping, is_showing_idle, renderer, volumio
+    global last_state, last_rendered_state, last_rendered_mode, last_active_time, last_cycle_time, last_sync_time, last_render_time, last_volumio_timestamp, last_volumio_seek, is_sleeping, is_showing_idle, config, renderer, volumio
+    
+    # Initialize configuration (moved here to avoid side effects at import time)
+    config = Config()
+    config.validate()
+    config.log_config()
     
     logger.info("SPI Now Playing - Starting...")
     
@@ -121,21 +126,24 @@ def main():
     time.sleep(3)
     
     # Initialize modules
-    # Extract media player host for renderer to fetch album art
+    # Extract Volumio host for renderer to fetch album art.
+    # Note: Album art caching via Volumio API only works with Volumio, not MoOde or piCorePlayer.
     volumio_host = "localhost"
-    try:
-        # Example: ws://192.168.1.10:3000/... -> 192.168.1.10
-        url = config.volumio_url
-        volumio_host = url.split("://")[1].split(":")[0]
-    except Exception:
-        pass
+    if config.media_player_type == "volumio":
+        try:
+            parsed = urlparse(config.volumio_url)
+            if parsed.hostname:
+                volumio_host = parsed.hostname
+                logger.info(f"Extracted Volumio hostname: {volumio_host}")
+        except Exception as e:
+            logger.warning(f"Failed to parse Volumio URL: {e}. Using localhost.")
 
     renderer = Renderer(
         config.display_width, config.display_height,
         config.framebuffer_device, config.color_format,
         volumio_host=volumio_host
     )
-    volumio = detect_media_player()
+    volumio = detect_media_player(config)
     
     # Disable the blinking cursor on the framebuffer console
     disable_cursor()
