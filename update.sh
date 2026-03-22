@@ -11,8 +11,8 @@ echo "--- Starting Reliable Update ---"
 
 # 1. Stop the service
 echo "Stopping $SERVICE_NAME..."
-# Try to stop the service gracefully, but kill it if it takes too long (10s timeout)
-if ! timeout 10s sudo systemctl stop $SERVICE_NAME; then
+# Try to stop the service gracefully, but kill it if it takes too long (20s timeout)
+if ! timeout 20s sudo systemctl stop $SERVICE_NAME; then
     echo "WARNING: Service failed to stop gracefully. Killing it..."
     sudo systemctl kill -s SIGKILL $SERVICE_NAME || true
     sudo systemctl stop $SERVICE_NAME || true
