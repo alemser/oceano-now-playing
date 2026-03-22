@@ -1,452 +1,70 @@
-"""MoOde Audio Player client.
+"""MoOde Audio Player client stub.
 
-Implementation of the MediaPlayer interface for MoOde Audio,
+Placeholder implementation of the MediaPlayer interface for MoOde Audio,
 a Raspberry Pi-based music player OS (https://moodeaudio.org).
 
-MoOde exposes playback state via HTTP API endpoint `/engine-mpd.php`.
-This implementation uses polling to fetch playback state at regular intervals,
-maintaining the same MediaPlayer interface as other clients (Volumio, piCorePlayer).
-
-Supports both MPD playback and AirPlay streaming via shairport-sync, Bluetooth, UPnP, etc.
-Uses multi-layered detection strategy for streaming renderer detection.
+MoOde exposes playback state via a local Unix socket and a PHP/WebSocket
+API. This stub provides the correct class structure so the state machine
+can be wired up without modification; a future contributor only needs to
+fill in the connection and message-parsing logic below.
 """
 
-import os
-import time
-import json
 import logging
-import requests
-import subprocess
-import select
-import plistlib
-from urllib.parse import urlparse
 from media_player import MediaPlayer
 
 logger = logging.getLogger(__name__)
 
-# Default MoOde HTTP API endpoint
-MOODE_DEFAULT_URL = "http://localhost/engine-mpd.php"
-
-# Minimum interval (seconds) between HTTP polls to avoid excessive API load.
-# Main loop may call receive_message() frequently (~10 times/second with 0.1s timeout),
-# but we throttle actual HTTP requests to this interval.
-MIN_POLL_INTERVAL = 1.0
-
-# Shairport-sync metadata file location (AirPlay)
-SHAIRPORT_METADATA_FILE = "/tmp/shairport-sync-metadata"
-
-# Metadata file cache: track last modification time to detect updates
-_METADATA_CACHE = {"mtime": 0, "data": None}
+# Default MoOde WebSocket endpoint (Socket.io compatible)
+MOODE_DEFAULT_URL = "ws://localhost/moode"
 
 
 class MoodeClient(MediaPlayer):
-    """MediaPlayer implementation for MoOde Audio using HTTP polling.
+    """MediaPlayer implementation for MoOde Audio.
 
-    MoOde doesn't provide real-time WebSocket updates like Volumio, so this
-    client polls the `/engine-mpd.php` endpoint periodically. The connection
-    interface remains compatible with other MediaPlayer implementations.
-
-    The polling is passive and on-demand: state is fetched when receive_message()
-    is called, avoiding constant network requests while maintaining interface
-    consistency.
+    This is a stub — the interface is complete but the transport layer
+    (WebSocket connection to MoOde) is not yet implemented.  Override
+    the methods below once the MoOde API details are confirmed.
     """
 
     def __init__(self, url: str = MOODE_DEFAULT_URL) -> None:
-        """Initialize MoOde client.
-
-        Args:
-            url: HTTP endpoint for MoOde API (default: http://localhost/engine-mpd.php)
-        """
         self.url = url
         self._connected = False
-        self._last_state: dict | None = None
-        self._last_poll_time: float = 0.0  # Track time of last HTTP poll
-        self._base_url = self._extract_base_url(url)
-
-    def _extract_base_url(self, url: str) -> str:
-        """Extract base URL from full API endpoint.
-
-        Args:
-            url: Full endpoint URL (e.g., http://localhost/engine-mpd.php)
-
-        Returns:
-            Base URL for relative paths (e.g., http://localhost)
-        """
-        parsed = urlparse(url)
-        return f"{parsed.scheme}://{parsed.netloc}"
-
-    def _check_shairport_running(self) -> bool:
-        """Check if shairport-sync process is running.
-        
-        Returns:
-            True if process is found, False otherwise.
-        """
-        try:
-            result = subprocess.run(
-                ["pgrep", "-f", "shairport-sync"],
-                capture_output=True,
-                timeout=1
-            )
-            is_running = result.returncode == 0
-            logger.debug(f"Shairport-sync process check: {'running' if is_running else 'not found'}")
-            return is_running
-        except Exception as e:
-            logger.debug(f"Error checking shairport-sync process: {e}")
-            return False
-
-    def _check_alsa_audio_active(self) -> bool:
-        """Check if ALSA is actively playing audio.
-        
-        Looks for "Status: Running" in ALSA stream information, which indicates
-        active audio playback at the hardware level (device-independent).
-        
-        Returns:
-            True if audio is actively playing, False otherwise.
-        """
-        try:
-            # Try multiple ALSA card/stream combinations to handle different devices
-            for card in range(5):  # Check cards 0-4
-                for stream in range(2):  # Playback (0) and Capture (1)
-                    path = f"/proc/asound/card{card}/stream{stream}"
-                    if not os.path.exists(path):
-                        continue
-                    
-                    try:
-                        with open(path, "r") as f:
-                            content = f.read()
-                            if "Status: Running" in content:
-                                logger.debug(f"ALSA audio active on card{card}/stream{stream}")
-                                return True
-                    except (IOError, OSError):
-                        continue
-            
-            logger.debug("ALSA: no active audio streams detected")
-            return False
-        except Exception as e:
-            logger.debug(f"Error checking ALSA status: {e}")
-            return False
-
-    def _check_metadata_file_active(self) -> bool:
-        """Check if shairport-sync metadata FIFO exists and is accessible.
-        
-        Note: Shairport-sync writes metadata to a FIFO (named pipe), not a regular file.
-        We can only verify the FIFO exists; mtime checks don't work reliably on FIFOs
-        since they report the creation time, not the last-write time.
-        
-        Returns:
-            True if metadata FIFO exists and is readable.
-        """
-        try:
-            if not os.path.exists(SHAIRPORT_METADATA_FILE):
-                logger.debug(f"Metadata FIFO not found: {SHAIRPORT_METADATA_FILE}")
-                return False
-            
-            # FIFO exists; consider it potentially active if it's a FIFO/pipe
-            mode = os.stat(SHAIRPORT_METADATA_FILE).st_mode
-            is_fifo = os.path.isfifo(SHAIRPORT_METADATA_FILE)
-            logger.debug(f"Metadata FIFO exists (is_fifo={is_fifo})")
-            return is_fifo
-        except Exception as e:
-            logger.debug(f"Error checking metadata FIFO: {e}")
-            return False
-
-    def _is_streaming_renderer_active(self) -> bool:
-        """Detect if audio is streaming from shairport-sync (AirPlay).
-        
-        Uses dual-layer detection specifically for AirPlay via shairport-sync:
-        1. Shairport-sync process is running (necessary condition for AirPlay)
-        2. ALSA shows active audio playback (hardware-level confirmation)
-        
-        Both indicators must be true for confident detection. This avoids false
-        positives from shairport running idle and false negatives from ALSA glitches.
-        
-        Note: Metadata file (FIFO) can't be reliably checked for freshness since
-        mtime reports creation time, not last-write time. We rely on the other two.
-        
-        Note: This detects AirPlay/shairport-sync streaming. Bluetooth and UPnP
-        streams use different mechanisms (BlueZ, UPnP renderers) not covered here.
-        For MoOde, AirPlay is the primary streaming renderer of interest.
-        
-        Returns:
-            True if AirPlay streaming via shairport-sync is detected, False otherwise.
-        """
-        logger.info("=== Streaming Renderer Detection ===")
-        shairport_running = self._check_shairport_running()
-        alsa_active = self._check_alsa_audio_active()
-        
-        # Both must be true: shairport running AND ALSA showing audio
-        # (Avoids false positives from idle shairport, false negatives from ALSA glitch)
-        is_active = shairport_running and alsa_active
-        
-        logger.info(f"Indicators: shairport={shairport_running}, alsa={alsa_active} => {is_active}")
-        
-        return is_active
-
-    def _get_airplay_metadata(self) -> dict | None:
-        """Read metadata from shairport-sync for currently playing AirPlay stream.
-
-        Shairport-sync writes metadata to /tmp/shairport-sync-metadata as a FIFO
-        (named pipe) in binary iTunes plist format. Opens with O_NONBLOCK flag to
-        avoid hanging the service if shairport isn't actively writing.
-
-        Extracts common metadata fields and maps them to standard playback schema:
-        - minm (title), asar (artist), asal (album), aaa (album artist)
-
-        Returns:
-            Dictionary with parsed metadata (title, artist, album) or None
-            if FIFO unavailable, no data available, or parsing fails.
-        """
-        try:
-            if not os.path.exists(SHAIRPORT_METADATA_FILE):
-                logger.info(f"Metadata FIFO not found: {SHAIRPORT_METADATA_FILE}")
-                return None
-
-            logger.info("Attempting non-blocking read from metadata FIFO...")
-            # Try to read plist from FIFO with non-blocking mode
-            try:
-                # Open FIFO with O_NONBLOCK flag to avoid hanging
-                fd = os.open(SHAIRPORT_METADATA_FILE, os.O_RDONLY | os.O_NONBLOCK)
-                try:
-                    # Read up to 64KB of plist data
-                    plist_data = os.read(fd, 65536)
-                finally:
-                    os.close(fd)
-                    
-                if not plist_data:
-                    logger.info("Metadata FIFO returned no data (would block)")
-                    return None
-                
-                logger.info(f"Read {len(plist_data)} bytes from metadata FIFO")
-                
-                # Parse plist
-                try:
-                    plist = plistlib.loads(plist_data)
-                    logger.info(f"Successfully parsed plist with {len(plist)} fields")
-                except Exception as e:
-                    # Data might be incomplete or corrupted - this is normal with FIFOs
-                    logger.info(f"Failed to parse metadata plist: {e}")
-                    return None
-                
-                # Extract standard metadata fields from iTunes plist
-                metadata = {}
-                
-                # Common iTunes metadata keys
-                if "minm" in plist and plist["minm"]:  # Title
-                    metadata["title"] = str(plist["minm"])
-                if "asar" in plist and plist["asar"]:  # Artist
-                    metadata["artist"] = str(plist["asar"])
-                if "asal" in plist and plist["asal"]:  # Album
-                    metadata["album"] = str(plist["asal"])
-                if "aaa" in plist and plist["aaa"]:  # Album artist
-                    metadata["albumartist"] = str(plist["aaa"])
-                
-                if metadata:
-                    logger.info(f"✓ Parsed AirPlay metadata: {metadata}")
-                    return metadata
-                else:
-                    logger.info("Metadata plist parsed but contained no useful fields")
-                    return None
-                        
-            except (BlockingIOError, IOError, OSError) as e:
-                # BlockingIOError = O_NONBLOCK and no data available (normal case)
-                # Other errors = actual read failures
-                if isinstance(e, BlockingIOError):
-                    logger.info("No metadata available on FIFO (would block)")
-                else:
-                    logger.info(f"Error reading metadata FIFO: {type(e).__name__}: {e}")
-                return None
-                
-        except Exception as e:
-            logger.info(f"Unexpected error in _get_airplay_metadata: {e}")
-            return None
 
     def connect(self) -> bool:
-        """Test connection to MoOde HTTP API.
-
-        Performs a single request to verify the endpoint is reachable.
+        """Connect to the MoOde WebSocket endpoint.
 
         Returns:
             True if connection was successful, False otherwise.
         """
-        try:
-            response = requests.get(self.url, timeout=3)
-            response.raise_for_status()
-            # Verify response is valid JSON
-            response.json()
-            self._connected = True
-            self._last_poll_time = 0.0  # Reset to allow immediate first poll
-            logger.info(f"Connected to MoOde at {self.url}")
-            return True
-        except (requests.RequestException, json.JSONDecodeError) as e:
-            logger.error(f"Error connecting to MoOde at {self.url}: {e}")
-            self._connected = False
-            return False
+        logger.warning(
+            "MoodeClient.connect() is not yet implemented. "
+            "Contribute the MoOde WebSocket transport to enable this player."
+        )
+        return False
 
     def receive_message(self, timeout: float = 1.0) -> dict | None:
-        """Poll MoOde for current playback state.
-
-        Fetches the current state from the MoOde API and returns it only if
-        it differs from the last polled state (change detection). Automatically
-        rate-limits HTTP requests to avoid excessive API load even when called
-        frequently by the main loop.
+        """Receive the next playback state from MoOde.
 
         Args:
-            timeout: Timeout in seconds for the HTTP request.
+            timeout: Maximum seconds to wait for a message.
 
         Returns:
-            A state dictionary when playback state has changed, or None if
-            unchanged or unreachable. Returns None if not connected or if
-            minimum poll interval has not elapsed to rate-limit API requests.
+            A state dictionary when a new playback state is available,
+            or None if no message arrived within the timeout.
         """
-        if not self._connected:
-            return None
-
-        # Rate-limit: only poll HTTP API if minimum interval has elapsed
-        # Main loop may call this ~10 times/second, but we throttle actual
-        # network requests to avoid unnecessary load on MoOde API.
-        now = time.time()
-        if now - self._last_poll_time < MIN_POLL_INTERVAL:
-            return None
-        
-        self._last_poll_time = now
-
-        try:
-            response = requests.get(self.url, timeout=timeout)
-            response.raise_for_status()
-            state = response.json()
-            
-            # Convert MoOde fields to standard MediaPlayer state format
-            normalized_state = self._normalize_state(state)
-            
-            # Only return state if it changed
-            if normalized_state != self._last_state:
-                logger.info(f"State changed: status={normalized_state.get('status')}, "
-                           f"title={normalized_state.get('title')}")
-                self._last_state = normalized_state
-                return normalized_state
-            
-            logger.debug(f"State unchanged (status={normalized_state.get('status')})")
-            return None
-        except (requests.RequestException, json.JSONDecodeError) as e:
-            logger.debug(f"Error polling MoOde: {e}")
-            return None
-
-    def _normalize_state(self, raw_state: dict) -> dict:
-        """Convert MoOde API response to standard playback state format.
-
-        Maps MoOde-specific fields to the common state schema used by all
-        MediaPlayer implementations. Includes sophisticated handling for
-        streaming renderers (AirPlay, Bluetooth, UPnP) where MPD reports
-        "stop" because it's not managing the current playback.
-
-        Args:
-            raw_state: Raw JSON response from MoOde API.
-
-        Returns:
-            Normalized state dictionary ready for display/rendering.
-        """
-        logger.debug(f"_normalize_state: Processing state - status={raw_state.get('state')}, "
-                    f"title={raw_state.get('title')}, current_song_path={raw_state.get('file')}")
-        
-        # Extract and convert numeric fields
-        elapsed = raw_state.get("elapsed")
-        seek = None
-        if elapsed is not None:
-            try:
-                # MoOde reports elapsed time in seconds; normalize to milliseconds
-                # to match Volumio/app schema used by renderer and seek interpolation
-                elapsed_seconds = float(elapsed)
-                seek = int(elapsed_seconds * 1000)
-            except (ValueError, TypeError):
-                pass
-
-        time = raw_state.get("time")
-        duration = None
-        if time is not None:
-            try:
-                # MoOde reports duration in seconds; normalize to milliseconds
-                # to match Volumio/app schema
-                duration_seconds = float(time)
-                duration = int(duration_seconds * 1000)
-            except (ValueError, TypeError):
-                pass
-
-        # Convert MoOde status to standard format
-        status = raw_state.get("state", "stop")
-        if status not in ["play", "pause", "stop"]:
-            status = "stop"
-
-        # Detect if a streaming renderer (AirPlay, Bluetooth, UPnP) is active
-        # When streaming via renderer, MPD reports "state":"stop" because it's not
-        # managing the playback. We need to detect this and override the status.
-        streaming_active = False
-        airplay_metadata = None
-        
-        if status == "stop":
-            logger.info("MPD status is 'stop', checking for active streaming renderer...")
-            
-            # Use multi-layered detection
-            streaming_active = self._is_streaming_renderer_active()
-            
-            if streaming_active:
-                logger.info("✓ Streaming renderer detected, overriding status: stop -> play")
-                status = "play"
-                
-                # Try to get metadata from the streaming source
-                airplay_metadata = self._get_airplay_metadata()
-                if airplay_metadata:
-                    logger.info(f"✓ Using streaming metadata: {airplay_metadata}")
-                else:
-                    logger.info("⚠ Streaming detected but no metadata available yet")
-            else:
-                logger.info("✗ No streaming renderer detected, keeping status as stop")
-
-        # Build album artwork URL (relative path needs base URL)
-        coverurl = raw_state.get("coverurl")
-        albumart = None
-        if coverurl and coverurl != "/images/default-album-cover.png":
-            albumart = f"{self._base_url}{coverurl}" if coverurl.startswith("/") else coverurl
-
-        # Extract quality info from bitrate and encoded fields
-        bitrate = raw_state.get("bitrate", "")
-        encoded = raw_state.get("encoded", "")
-        quality = None
-        if encoded:
-            quality = encoded
-        elif bitrate and bitrate != "0 bps":
-            quality = bitrate
-
-        # Use streaming metadata if available, otherwise fall back to MPD metadata
-        final_state = {
-            "title": (airplay_metadata.get("title") if airplay_metadata else None) or raw_state.get("title", ""),
-            "artist": (airplay_metadata.get("artist") if airplay_metadata else None) or raw_state.get("artist", ""),
-            "album": (airplay_metadata.get("album") if airplay_metadata else None) or raw_state.get("album", ""),
-            "albumart": albumart,
-            "status": status,
-            "seek": seek,
-            "duration": duration,
-            "quality": quality,
-            "volume": int(raw_state.get("volume", 100)),
-        }
-        
-        logger.debug(f"_normalize_state result: status={final_state['status']}, "
-                    f"title={final_state['title']}, artist={final_state['artist']}")
-        
-        return final_state
+        logger.warning(
+            "MoodeClient.receive_message() is not yet implemented."
+        )
+        return None
 
     def is_connected(self) -> bool:
         """Check if currently connected to MoOde.
 
         Returns:
-            True if the connection test passed, False otherwise.
+            True if the connection is active, False otherwise.
         """
         return self._connected
 
     def close(self) -> None:
-        """Close the connection to MoOde (cleanup).
-
-        No persistent connection to close, but resets internal state.
-        """
+        """Close the connection to MoOde gracefully."""
         self._connected = False
-        self._last_state = None
-        self._last_poll_time = 0.0
