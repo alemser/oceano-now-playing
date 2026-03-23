@@ -187,7 +187,6 @@ def mock_renderer(mock_framebuffer, monkeypatch):
         width=480,
         height=320,
         fb_device=mock_framebuffer,
-        color_format='RGB565',
-        volumio_host='localhost'
+        color_format='RGB565'
     )
     return renderer

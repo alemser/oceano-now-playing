@@ -63,3 +63,17 @@ class MediaPlayer(ABC):
         Default implementation is a safe no-op.
         """
         pass
+
+    def resolve_artwork(self, state: dict, timeout: float = 3.0) -> dict | None:
+        """Resolve media-player-specific artwork into a renderable object.
+
+        Args:
+            state: Current playback state.
+            timeout: Maximum seconds to spend resolving artwork.
+
+        Returns:
+            A dictionary containing resolved artwork information, or None if
+            no usable artwork is available. The default implementation is a
+            safe no-op for media players that don't provide artwork handling.
+        """
+        return None

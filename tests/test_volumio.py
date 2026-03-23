@@ -9,7 +9,10 @@ Critical functionality:
 
 import pytest
 import json
-from unittest.mock import MagicMock
+from io import BytesIO
+from unittest.mock import MagicMock, patch
+
+from PIL import Image
 
 
 def test_volumio_connect_success(mock_volumio_client):
@@ -149,3 +152,77 @@ def test_volumio_reconnect_on_error(mock_volumio_client):
     # Timeout alone shouldn't disconnect, but connection errors should
     # (Need to implement socket.error handling to test this fully)
     assert state is None
+
+
+def _image_bytes(color=(255, 0, 0)):
+    """Build image bytes for artwork resolution tests."""
+    image = Image.new('RGB', (16, 16), color=color)
+    buffer = BytesIO()
+    image.save(buffer, format='JPEG')
+    return buffer.getvalue()
+
+
+@patch('volumio.requests.get')
+def test_volumio_resolve_artwork_success(mock_get, mock_volumio_client, volumio_state_playing):
+    """Resolve Volumio artwork into a renderer-friendly object."""
+    client, _ = mock_volumio_client
+
+    response = MagicMock()
+    response.status_code = 200
+    response.content = _image_bytes()
+    response.headers = {'content-type': 'image/jpeg'}
+    response.raise_for_status.return_value = None
+    mock_get.return_value = response
+
+    with patch.object(client, '_is_placeholder_image', return_value=(False, 'no-match', 'abc')):
+        resolved = client.resolve_artwork(volumio_state_playing)
+
+    assert resolved is not None
+    assert resolved['cache_key'] == volumio_state_playing['albumart']
+    assert resolved['source'] == 'volumio'
+    assert resolved['image'].size == (16, 16)
+
+
+@patch('volumio.ArtworkLookup.get_artwork')
+@patch('volumio.requests.get')
+def test_volumio_resolve_artwork_uses_fallback(mock_get, mock_lookup, mock_volumio_client, volumio_state_playing):
+    """Use fallback artwork when Volumio returns its default placeholder."""
+    client, _ = mock_volumio_client
+
+    response = MagicMock()
+    response.status_code = 200
+    response.content = _image_bytes()
+    response.headers = {'content-type': 'image/jpeg'}
+    response.raise_for_status.return_value = None
+    mock_get.return_value = response
+
+    fallback_image = Image.new('RGB', (20, 20), color='blue')
+    mock_lookup.return_value = fallback_image
+
+    with patch.object(client, '_is_placeholder_image', return_value=(True, 'exact-sha256-match', 'abc')):
+        resolved = client.resolve_artwork(volumio_state_playing)
+
+    assert resolved is not None
+    assert resolved['source'] == 'fallback'
+    assert resolved['cache_key'] == 'fallback:Test Artist|Test Album'
+    assert resolved['image'] is fallback_image
+
+
+@patch('volumio.ArtworkLookup.get_artwork')
+@patch('volumio.requests.get')
+def test_volumio_resolve_artwork_returns_none_without_fallback(mock_get, mock_lookup, mock_volumio_client, volumio_state_playing):
+    """Return None when placeholder artwork has no fallback match."""
+    client, _ = mock_volumio_client
+
+    response = MagicMock()
+    response.status_code = 200
+    response.content = _image_bytes()
+    response.headers = {'content-type': 'image/jpeg'}
+    response.raise_for_status.return_value = None
+    mock_get.return_value = response
+    mock_lookup.return_value = None
+
+    with patch.object(client, '_is_placeholder_image', return_value=(True, 'exact-sha256-match', 'abc')):
+        resolved = client.resolve_artwork(volumio_state_playing)
+
+    assert resolved is None

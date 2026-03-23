@@ -4,7 +4,6 @@ import signal
 import sys
 import logging
 import threading
-from urllib.parse import urlparse
 from renderer import Renderer
 from media_player import MediaPlayer
 from volumio import VolumioClient
@@ -268,23 +267,9 @@ def main():
     logger.info("Waiting for system to stabilize...")
     time.sleep(3)
     
-    # Initialize modules
-    # Extract Volumio host for renderer to fetch album art.
-    # Note: Album art caching via Volumio API only works with Volumio, not MoOde or piCorePlayer.
-    volumio_host = "localhost"
-    if config.media_player_type == "volumio":
-        try:
-            parsed = urlparse(config.volumio_url)
-            if parsed.hostname:
-                volumio_host = parsed.hostname
-                logger.info(f"Extracted Volumio hostname: {volumio_host}")
-        except Exception as e:
-            logger.warning(f"Failed to parse Volumio URL: {e}. Using localhost.")
-
     renderer = Renderer(
         config.display_width, config.display_height,
-        config.framebuffer_device, config.color_format,
-        volumio_host=volumio_host
+        config.framebuffer_device, config.color_format
     )
     player = detect_media_player(config)
     
@@ -326,10 +311,20 @@ def main():
                 if new_data:
                     # Detect song change to reset text mode and clear art cache
                     is_new_song = False
+                    artwork_changed = False
                     if not last_state:
                         is_new_song = True
                     elif new_data.get('title') != last_state.get('title') or new_data.get('artist') != last_state.get('artist'):
                         is_new_song = True
+                    if last_state and new_data.get('albumart') != last_state.get('albumart'):
+                        artwork_changed = True
+
+                    previous_resolved_artwork = last_state.get('_resolved_artwork') if last_state else None
+
+                    if is_new_song or artwork_changed or last_state is None:
+                        new_data['_resolved_artwork'] = player.resolve_artwork(new_data)
+                    else:
+                        new_data['_resolved_artwork'] = previous_resolved_artwork
                     
                     if is_new_song:
                         show_capa_mode = False
