@@ -175,6 +175,32 @@ class TestArtCaching:
         renderer.clear_art_cache()
         assert len(renderer.art_cache) == 0
 
+    def test_placeholder_without_fallback_is_not_cached(self, mock_renderer):
+        """Test that detected placeholder artwork is not persisted in cache."""
+        renderer = mock_renderer
+        art_url = '/albumart?cacheid=14&web=Bob%20Marley%20%26%20The%20Wailers/Exodus/extralarge'
+
+        with patch.object(renderer, '_fetch_artwork_on_cache_miss', return_value=(None, None, 'placeholder')):
+            result = renderer._get_cached_art(art_url, artist='Bob Marley & The Wailers', album='Exodus')
+
+        assert result is None
+        assert art_url not in renderer.art_cache
+        assert art_url not in renderer.art_cache_meta
+
+    def test_fallback_artwork_is_cached_with_metadata(self, mock_renderer):
+        """Test that fallback artwork is cached and source metadata is tracked."""
+        renderer = mock_renderer
+        art_url = '/albumart?cacheid=14&web=Bob%20Marley%20%26%20The%20Wailers/Exodus/extralarge'
+        test_img = Image.new('RGB', (320, 320), color=(120, 120, 120))
+        accent = (120, 120, 120)
+
+        with patch.object(renderer, '_fetch_artwork_on_cache_miss', return_value=(test_img, accent, 'fallback')):
+            result = renderer._get_cached_art(art_url, artist='Bob Marley & The Wailers', album='Exodus')
+
+        assert result == (test_img, accent)
+        assert renderer.art_cache[art_url] == (test_img, accent)
+        assert renderer.art_cache_meta[art_url]['source'] == 'fallback'
+
 
 class TestColorConversion:
     """Test RGB888 to RGB565 color conversion."""

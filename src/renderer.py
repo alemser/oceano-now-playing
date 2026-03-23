@@ -28,6 +28,7 @@ class Renderer:
         self.volumio_host = volumio_host
         self.fb_handle = None
         self.art_cache = {}  # Cache for resized images and their dominant colors
+        self.art_cache_meta = {}  # Cache metadata keyed by artwork URL
         self.art_size = 320
         self.art_x, self.art_y = 10, 0
         
@@ -362,6 +363,7 @@ class Renderer:
     def clear_art_cache(self):
         """Clears the album art cache."""
         self.art_cache.clear()
+        self.art_cache_meta.clear()
 
     def _fetch_artwork_on_cache_miss(self, art_url, artist="", album=""):
         """Retrieve and process artwork for cache misses.
@@ -399,8 +401,9 @@ class Renderer:
                 logger.info(f"[ART FALLBACK] Using Cover Art Archive for {artist} - {album}")
                 fallback_accent = self._get_dominant_color(fallback_art)
                 fallback_resized = fallback_art.resize((self.art_size, self.art_size), Image.Resampling.LANCZOS)
-                return fallback_resized, fallback_accent
+                return fallback_resized, fallback_accent, "fallback"
             logger.warning(f"[ART FALLBACK] No fallback artwork for {artist} - {album}")
+            return None, None, "placeholder"
         else:
             logger.info(f"[ART PLACEHOLDER] Not placeholder sha256={sha256}")
 
@@ -410,12 +413,13 @@ class Renderer:
 
         # Resize for display
         art_resized = art.resize((self.art_size, self.art_size), Image.Resampling.LANCZOS)
-        return art_resized, accent
+        return art_resized, accent, "volumio"
 
     def _get_cached_art(self, art_url, artist="", album=""):
         """Fetches and resizes the cover art, with caching and dominant color extraction."""
         if art_url in self.art_cache:
-            logger.info(f"[ART CACHE HIT] URL: {art_url}")
+            source = self.art_cache_meta.get(art_url, {}).get("source", "unknown")
+            logger.info(f"[ART CACHE HIT] URL: {art_url}, Source: {source}")
             return self.art_cache[art_url]
 
         logger.info(f"[ART FETCH] URL: {art_url}")
@@ -423,10 +427,16 @@ class Renderer:
             if len(self.art_cache) > 10:
                 logger.info(f"[ART CACHE] Clearing cache (size: {len(self.art_cache)})")
                 self.art_cache.clear()
-            art_resized, accent = self._fetch_artwork_on_cache_miss(art_url, artist=artist, album=album)
+                self.art_cache_meta.clear()
+            art_resized, accent, source = self._fetch_artwork_on_cache_miss(art_url, artist=artist, album=album)
+
+            if art_resized is None:
+                logger.warning(f"[ART SKIP CACHE] Placeholder detected without fallback: {art_url}")
+                return None
             
             self.art_cache[art_url] = (art_resized, accent)
-            logger.info(f"[ART SUCCESS] Cached and resized: {art_url}")
+            self.art_cache_meta[art_url] = {"source": source}
+            logger.info(f"[ART SUCCESS] Cached and resized: {art_url}, Source: {source}")
             return art_resized, accent
         except Exception as e:
             logger.warning(f"[ART ERROR] Failed to load artwork from {art_url}: {type(e).__name__}: {e}")
