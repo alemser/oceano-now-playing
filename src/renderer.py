@@ -49,16 +49,16 @@ LAYOUT_PROFILES = {
         name="high_contrast",
         bg_color=(6, 6, 6),
         title_color=(255, 255, 255),
-        artist_color=(245, 245, 245),
-        album_color=(215, 215, 215),
+        artist_color=(195, 215, 230),
+        album_color=(170, 170, 170),
         quality_text_color=(255, 255, 255),
         quality_box_color=(255, 255, 255),
         progress_track_color=(30, 30, 30),
         progress_height=10,
         status_icon_size=24,
-        title_font_size=46,
-        artist_font_size=36,
-        album_font_size=28,
+        title_font_size=54,
+        artist_font_size=30,
+        album_font_size=22,
         quality_font_size=24,
     ),
 }
@@ -389,19 +389,22 @@ class Renderer:
 
         if not show_capa_mode:
             # --- MODE 1: CENTERED TEXT ---
-            y_cursor = 24 if profile.name == "high_contrast" else 35
+            y_cursor = 18 if profile.name == "high_contrast" else 35
             
             # Title (wrapped if needed, then centered)
-            title_lines = textwrap.wrap(title, width=25)
+            title_wrap_width = 20 if profile.name == "high_contrast" else 25
+            title_lines = textwrap.wrap(title, width=title_wrap_width)
             for line in title_lines[:2]:
                 y_cursor = self._draw_centered_text(draw, line, y_cursor, f_xl, profile.title_color)
             
-            y_cursor += 6 if profile.name == "high_contrast" else 5
+            y_cursor += 14 if profile.name == "high_contrast" else 5
             # Artist
-            y_cursor = self._draw_centered_text(draw, artist[:40], y_cursor, f_large, profile.artist_color)
+            artist_max_chars = 34 if profile.name == "high_contrast" else 40
+            y_cursor = self._draw_centered_text(draw, artist[:artist_max_chars], y_cursor, f_large, profile.artist_color)
             
             # Album
-            y_cursor = self._draw_centered_text(draw, album[:45], y_cursor, f_med, profile.album_color)
+            album_max_chars = 40 if profile.name == "high_contrast" else 45
+            y_cursor = self._draw_centered_text(draw, album[:album_max_chars], y_cursor, f_med, profile.album_color)
             
             # Tech Info at bottom center
             quality_str = f"{samplerate} | {bitdepth}" if samplerate and bitdepth else samplerate or bitdepth
