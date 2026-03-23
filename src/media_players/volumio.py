@@ -1,7 +1,6 @@
 import json
 import logging
 import time
-import os
 import hashlib
 from io import BytesIO
 from urllib.parse import urlparse
@@ -18,7 +17,6 @@ logger = logging.getLogger(__name__)
 VOLUMIO_PLACEHOLDER_SHA256_HASHES = {
     "d38e8d8533672451d5a3572c0c8c7d4e89218277116bc24afe33af545597ec85",
 }
-VOLUMIO_DEFAULT_PLACEHOLDER_PATH = "/volumio/app/plugins/miscellanea/albumart/default.png"
 ARTWORK_PLACEHOLDER_RETRY_DELAY_SECONDS = 0.7
 
 
@@ -28,9 +26,6 @@ class VolumioClient(MediaPlayer):
         self.ws = None
         parsed = urlparse(url)
         self.host = parsed.hostname or "localhost"
-        self.placeholder_dhash = os.getenv("VOLUMIO_PLACEHOLDER_DHASH", "").lower()
-        if not self.placeholder_dhash:
-            self.placeholder_dhash = self._load_default_placeholder_dhash()
 
     def connect(self) -> bool:
         """Connects to Volumio's WebSocket.
@@ -109,47 +104,11 @@ class VolumioClient(MediaPlayer):
             return f"{url}?t={int(time.time())}"
         return art_url
 
-    def _compute_dhash(self, image: Image.Image, hash_size: int = 8) -> str:
-        """Compute a simple difference hash for perceptual matching."""
-        gray = image.convert("L").resize((hash_size + 1, hash_size), Image.Resampling.BILINEAR)
-        bits = []
-        for y in range(hash_size):
-            for x in range(hash_size):
-                left = gray.getpixel((x, y))
-                right = gray.getpixel((x + 1, y))
-                bits.append("1" if right > left else "0")
-        return f"{int(''.join(bits), 2):0{hash_size * hash_size // 4}x}"
-
-    def _load_default_placeholder_dhash(self) -> str:
-        """Load dHash from Volumio's bundled default artwork when available."""
-        try:
-            if not os.path.exists(VOLUMIO_DEFAULT_PLACEHOLDER_PATH):
-                return ""
-            with open(VOLUMIO_DEFAULT_PLACEHOLDER_PATH, "rb") as f:
-                default_img = Image.open(BytesIO(f.read())).convert("RGB")
-            dhash = self._compute_dhash(default_img)
-            return dhash
-        except Exception as e:
-            logger.debug(f"[ART PLACEHOLDER] Could not load default placeholder dHash: {e}")
-            return ""
-
-    def _hamming_distance(self, hex_a: str, hex_b: str) -> int:
-        """Compute Hamming distance between two equal-length hex strings."""
-        if len(hex_a) != len(hex_b):
-            return 999
-        return (int(hex_a, 16) ^ int(hex_b, 16)).bit_count()
-
     def _is_placeholder_image(self, image_bytes: bytes, image: Image.Image) -> tuple[bool, str, str]:
         """Detect Volumio's default placeholder artwork."""
         sha256 = hashlib.sha256(image_bytes).hexdigest()
         if sha256 in VOLUMIO_PLACEHOLDER_SHA256_HASHES:
             return True, "exact-sha256-match", sha256
-
-        if self.placeholder_dhash:
-            fetched_dhash = self._compute_dhash(image)
-            distance = self._hamming_distance(fetched_dhash, self.placeholder_dhash)
-            if distance <= 6:
-                return True, f"perceptual-dhash-match(distance={distance})", sha256
 
         return False, "no-match", sha256
 
