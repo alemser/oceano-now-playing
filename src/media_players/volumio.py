@@ -22,11 +22,12 @@ ARTWORK_PLACEHOLDER_RETRY_DELAY_SECONDS = 0.7
 
 
 class VolumioClient(MediaPlayer):
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, external_artwork_enabled: bool = True) -> None:
         self.url = url
         self.ws = None
         parsed = urlparse(url)
         self.host = parsed.hostname or "localhost"
+        self.external_artwork_enabled = external_artwork_enabled
 
     def connect(self) -> bool:
         """Connects to Volumio's WebSocket.
@@ -113,6 +114,14 @@ class VolumioClient(MediaPlayer):
 
         return False, "no-match", sha256
 
+    def _resolved_artwork(self, cache_key: str, image: Image.Image, source: str) -> dict:
+        """Build a renderer-friendly artwork payload."""
+        return {
+            "cache_key": cache_key,
+            "image": image,
+            "source": source,
+        }
+
     def resolve_artwork(self, state: dict, timeout: float = 3.0) -> dict | None:
         """Resolve Volumio artwork, replacing placeholders with fallback art."""
         art_url = state.get("albumart", "")
@@ -134,11 +143,7 @@ class VolumioClient(MediaPlayer):
                 if not is_placeholder:
                     if attempt > 1:
                         logger.info(f"[ART RETRY] Volumio artwork recovered after placeholder for {artist} - {album}")
-                    return {
-                        "cache_key": art_url,
-                        "image": art_image,
-                        "source": "volumio",
-                    }
+                    return self._resolved_artwork(art_url, art_image, "volumio")
 
                 logger.warning(
                     f"[ART PLACEHOLDER] Detected Volumio default artwork ({reason}) sha256={sha256}"
@@ -147,17 +152,21 @@ class VolumioClient(MediaPlayer):
                     time.sleep(ARTWORK_PLACEHOLDER_RETRY_DELAY_SECONDS)
                     continue
 
+                if not self.external_artwork_enabled:
+                    logger.info(f"[ART FALLBACK] External artwork disabled for {artist} - {album}")
+                    return self._resolved_artwork(art_url, art_image, "volumio-placeholder")
+
                 fallback_art = ArtworkLookup.get_artwork(artist, album, timeout=timeout)
                 if fallback_art:
                     logger.info(f"[ART FALLBACK] Using Cover Art Archive for {artist} - {album}")
-                    return {
-                        "cache_key": f"fallback:{artist}|{album}",
-                        "image": fallback_art,
-                        "source": "fallback",
-                    }
+                    return self._resolved_artwork(
+                        f"fallback:{artist}|{album}",
+                        fallback_art,
+                        "fallback",
+                    )
 
-                logger.warning(f"[ART FALLBACK] No fallback artwork for {artist} - {album}")
-                return None
+                logger.warning(f"[ART FALLBACK] No fallback artwork for {artist} - {album}; keeping Volumio artwork")
+                return self._resolved_artwork(art_url, art_image, "volumio-placeholder")
             except requests.RequestException as e:
                 logger.warning(f"[ART ERROR] Failed to load artwork from {art_url}: {type(e).__name__}: {e}")
                 return None

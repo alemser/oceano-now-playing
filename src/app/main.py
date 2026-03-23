@@ -62,7 +62,14 @@ def auto_detect_media_player(cfg: Config) -> MediaPlayer:
     logger.info("Auto-detecting media player...")
 
     candidates = [
-        ('volumio', cfg.volumio_url, VolumioClient),
+        (
+            'volumio',
+            cfg.volumio_url,
+            lambda url: VolumioClient(
+                url,
+                external_artwork_enabled=cfg.external_artwork_enabled,
+            ),
+        ),
         ('moode', cfg.moode_url, MoodeClient),
     ]
 
@@ -98,7 +105,10 @@ def auto_detect_media_player(cfg: Config) -> MediaPlayer:
             logger.debug(f"✗ {name} probe failed: {e}")
 
     logger.warning("No media player detected. Falling back to Volumio.")
-    return VolumioClient(cfg.volumio_url)
+    return VolumioClient(
+        cfg.volumio_url,
+        external_artwork_enabled=cfg.external_artwork_enabled,
+    )
 
 
 def detect_media_player(cfg: Config) -> MediaPlayer:

@@ -227,7 +227,7 @@ def test_volumio_resolve_artwork_uses_fallback(mock_get, mock_lookup, mock_volum
 @patch('media_players.volumio.ArtworkLookup.get_artwork')
 @patch('media_players.volumio.requests.get')
 def test_volumio_resolve_artwork_returns_none_without_fallback(mock_get, mock_lookup, mock_volumio_client, volumio_state_playing):
-    """Return None when placeholder artwork has no fallback match."""
+    """Keep Volumio artwork when placeholder fallback lookup has no match."""
     client, _ = mock_volumio_client
 
     response = MagicMock()
@@ -241,7 +241,9 @@ def test_volumio_resolve_artwork_returns_none_without_fallback(mock_get, mock_lo
     with patch.object(client, '_is_placeholder_image', return_value=(True, 'exact-sha256-match', 'abc')):
         resolved = client.resolve_artwork(volumio_state_playing)
 
-    assert resolved is None
+    assert resolved is not None
+    assert resolved['source'] == 'volumio-placeholder'
+    assert resolved['cache_key'] == volumio_state_playing['albumart']
 
 
 @patch('media_players.volumio.time.sleep')
@@ -284,6 +286,38 @@ def test_volumio_resolve_artwork_retries_and_uses_native_art(
 
     assert resolved is not None
     assert resolved['source'] == 'volumio'
+    assert resolved['cache_key'] == volumio_state_playing['albumart']
+    assert mock_get.call_count == 2
+    mock_sleep.assert_called_once()
+    mock_lookup.assert_not_called()
+
+
+@patch('media_players.volumio.time.sleep')
+@patch('media_players.volumio.ArtworkLookup.get_artwork')
+@patch('media_players.volumio.requests.get')
+def test_volumio_resolve_artwork_skips_external_services_when_disabled(
+    mock_get,
+    mock_lookup,
+    mock_sleep,
+    mock_volumio_client,
+    volumio_state_playing,
+):
+    """Keep Volumio placeholder artwork when external services are disabled."""
+    client, _ = mock_volumio_client
+    client.external_artwork_enabled = False
+
+    response = MagicMock()
+    response.status_code = 200
+    response.content = _image_bytes()
+    response.headers = {'content-type': 'image/jpeg'}
+    response.raise_for_status.return_value = None
+    mock_get.side_effect = [response, response]
+
+    with patch.object(client, '_is_placeholder_image', return_value=(True, 'exact-sha256-match', 'abc')):
+        resolved = client.resolve_artwork(volumio_state_playing)
+
+    assert resolved is not None
+    assert resolved['source'] == 'volumio-placeholder'
     assert resolved['cache_key'] == volumio_state_playing['albumart']
     assert mock_get.call_count == 2
     mock_sleep.assert_called_once()
