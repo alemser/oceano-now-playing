@@ -103,9 +103,6 @@ class CoverArtArchive:
                     )
 
                 if matches:
-                    logger.info(
-                        f"[CAA] MusicBrainz candidates for {artist} - {album}: {len(matches)}"
-                    )
                     break
 
             return matches
@@ -150,12 +147,10 @@ class CoverArtArchive:
                         timeout=timeout,
                     )
                     response.raise_for_status()
-                    logger.info(f"[CAA] Artwork found via {url}")
                     return Image.open(BytesIO(response.content)).convert("RGB")
                 except requests.HTTPError as e:
                     status_code = getattr(e.response, "status_code", None)
                     if status_code == 404:
-                        logger.info(f"[CAA] Artwork not found at {url}")
                         continue
                     logger.warning(f"[CAA] Artwork fetch failed: {type(e).__name__}: {e}")
                 except requests.RequestException as e:

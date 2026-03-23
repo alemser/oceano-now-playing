@@ -129,7 +129,6 @@ class VolumioClient(MediaPlayer):
             with open(VOLUMIO_DEFAULT_PLACEHOLDER_PATH, "rb") as f:
                 default_img = Image.open(BytesIO(f.read())).convert("RGB")
             dhash = self._compute_dhash(default_img)
-            logger.info(f"[ART PLACEHOLDER] Loaded default placeholder dHash: {dhash}")
             return dhash
         except Exception as e:
             logger.debug(f"[ART PLACEHOLDER] Could not load default placeholder dHash: {e}")
@@ -165,22 +164,12 @@ class VolumioClient(MediaPlayer):
         album = state.get("album", "")
         full_url = self._build_artwork_url(art_url)
 
-        logger.info(f"[ART FETCH] URL: {art_url}")
-        logger.info(f"[ART FETCH] Full URL: {full_url}")
-
         try:
             response = requests.get(full_url, timeout=timeout)
             response.raise_for_status()
-            logger.info(
-                f"[ART FETCH] Status: {response.status_code}, Size: {len(response.content)} bytes, "
-                f"Content-Type: {response.headers.get('content-type', 'unknown')}"
-            )
 
             art_bytes = response.content
             art_image = Image.open(BytesIO(art_bytes)).convert("RGB")
-            logger.info(
-                f"[ART FETCH] Image format: {art_image.format}, Size: {art_image.size}, Mode: {art_image.mode}"
-            )
 
             is_placeholder, reason, sha256 = self._is_placeholder_image(art_bytes, art_image)
             if is_placeholder:
@@ -199,7 +188,6 @@ class VolumioClient(MediaPlayer):
                 logger.warning(f"[ART FALLBACK] No fallback artwork for {artist} - {album}")
                 return None
 
-            logger.info(f"[ART PLACEHOLDER] Not placeholder sha256={sha256}")
             return {
                 "cache_key": art_url,
                 "image": art_image,

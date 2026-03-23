@@ -252,7 +252,6 @@ class Renderer:
             )
             if art_data:
                 art, accent_color = art_data
-                logger.info(f"[RENDER] Artwork loaded successfully")
             else:
                 logger.warning(f"[RENDER] Failed to load artwork, using default accent")
         elif albumart:
@@ -313,7 +312,6 @@ class Renderer:
     def _prepare_artwork_on_cache_miss(self, artwork_image):
         """Resize resolved artwork and compute its dominant color."""
         accent = self._get_dominant_color(artwork_image)
-        logger.info(f"[ART PREPARE] Dominant color: RGB{accent}")
 
         art_resized = artwork_image.resize((self.art_size, self.art_size), Image.Resampling.LANCZOS)
         return art_resized, accent
@@ -324,21 +322,16 @@ class Renderer:
             return None
 
         if cache_key in self.art_cache:
-            cached_source = self.art_cache_meta.get(cache_key, {}).get("source", source)
-            logger.info(f"[ART CACHE HIT] Key: {cache_key}, Source: {cached_source}")
             return self.art_cache[cache_key]
 
-        logger.info(f"[ART PREPARE] Key: {cache_key}, Source: {source}")
         try:
             if len(self.art_cache) > 10:
-                logger.info(f"[ART CACHE] Clearing cache (size: {len(self.art_cache)})")
                 self.art_cache.clear()
                 self.art_cache_meta.clear()
             art_resized, accent = self._prepare_artwork_on_cache_miss(artwork_image)
             
             self.art_cache[cache_key] = (art_resized, accent)
             self.art_cache_meta[cache_key] = {"source": source}
-            logger.info(f"[ART SUCCESS] Cached and resized: {cache_key}, Source: {source}")
             return art_resized, accent
         except Exception as e:
             logger.warning(f"[ART ERROR] Failed to prepare artwork {cache_key}: {type(e).__name__}: {e}")
