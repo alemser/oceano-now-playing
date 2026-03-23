@@ -86,6 +86,18 @@ To update the project reliably (with automatic rollback on failure):
 ```
 This script will stop the service, pull the latest code, update dependencies, and restart the service. If the new version fails to start, it will automatically roll back to the previous working version.
 
+To test a pull request or a branch on Raspberry Pi without moving `main` manually:
+```bash
+./update-pr.sh 123
+./update-pr.sh feature/album-art-fix
+```
+This script will:
+- stop the service
+- fetch the requested PR or branch from `origin`
+- install dependencies if needed
+- restart the service
+- automatically roll back to the previous commit if startup fails
+
 ## Uninstallation
 
 To remove the service and the virtual environment:
