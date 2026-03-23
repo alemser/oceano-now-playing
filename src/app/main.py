@@ -245,6 +245,7 @@ def main():
         config.display_height,
         config.framebuffer_device,
         config.color_format,
+        layout_profile=config.layout_profile,
     )
     player = detect_media_player(config)
 

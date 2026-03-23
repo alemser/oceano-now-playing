@@ -1,17 +1,86 @@
 import os
 import textwrap
 import logging
+from dataclasses import dataclass
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class LayoutProfile:
+    """Visual profile for text and artwork layouts."""
+
+    name: str
+    bg_color: tuple[int, int, int]
+    title_color: tuple[int, int, int]
+    artist_color: tuple[int, int, int]
+    album_color: tuple[int, int, int]
+    quality_text_color: tuple[int, int, int]
+    quality_box_color: tuple[int, int, int]
+    progress_track_color: tuple[int, int, int]
+    progress_height: int
+    status_icon_size: int
+    title_font_size: int
+    artist_font_size: int
+    album_font_size: int
+    quality_font_size: int
+
+
+LAYOUT_PROFILES = {
+    "classic": LayoutProfile(
+        name="classic",
+        bg_color=(0, 0, 0),
+        title_color=(255, 255, 255),
+        artist_color=(200, 200, 200),
+        album_color=(120, 120, 120),
+        quality_text_color=(255, 255, 255),
+        quality_box_color=(255, 255, 255),
+        progress_track_color=(40, 40, 40),
+        progress_height=6,
+        status_icon_size=18,
+        title_font_size=42,
+        artist_font_size=32,
+        album_font_size=24,
+        quality_font_size=20,
+    ),
+    "high_contrast": LayoutProfile(
+        name="high_contrast",
+        bg_color=(6, 6, 6),
+        title_color=(255, 255, 255),
+        artist_color=(245, 245, 245),
+        album_color=(215, 215, 215),
+        quality_text_color=(255, 255, 255),
+        quality_box_color=(255, 255, 255),
+        progress_track_color=(30, 30, 30),
+        progress_height=10,
+        status_icon_size=24,
+        title_font_size=46,
+        artist_font_size=36,
+        album_font_size=28,
+        quality_font_size=24,
+    ),
+}
+
 class Renderer:
-    def __init__(self, width=480, height=320, fb_device="/dev/fb0", color_format="RGB565"):
+    def __init__(
+        self,
+        width=480,
+        height=320,
+        fb_device="/dev/fb0",
+        color_format="RGB565",
+        layout_profile="high_contrast",
+    ):
         self.width = width
         self.height = height
         self.fb_device = fb_device
         self.color_format = color_format.upper()
+        self.layout_profile_name = layout_profile.lower()
+        self.layout_profile = LAYOUT_PROFILES.get(
+            self.layout_profile_name,
+            LAYOUT_PROFILES["high_contrast"],
+        )
         self.fb_handle = None
         self.art_cache = {}  # Cache for resized images and their dominant colors
         self.art_cache_meta = {}  # Cache metadata keyed by artwork URL
@@ -254,15 +323,16 @@ class Renderer:
             logger.info("Framebuffer handle was closed, re-opening.")
             self._open_fb()
 
-        img = Image.new('RGB', (self.width, self.height), color=(0, 0, 0))
+        profile = self.layout_profile
+        img = Image.new('RGB', (self.width, self.height), color=profile.bg_color)
         draw = ImageDraw.Draw(img)
 
         # Fonts
-        f_xl = self.get_font(42, bold=True)
-        f_large = self.get_font(32, bold=True)
-        f_med = self.get_font(24)
-        f_small = self.get_font(18)
-        f_tech = self.get_font(20, bold=True)
+        f_xl = self.get_font(profile.title_font_size, bold=True)
+        f_large = self.get_font(profile.artist_font_size, bold=True)
+        f_med = self.get_font(profile.album_font_size, bold=True if profile.name == "high_contrast" else False)
+        f_small = self.get_font(profile.status_icon_size)
+        f_tech = self.get_font(profile.quality_font_size, bold=True)
 
         # Data
         title = data.get('title', 'Unknown')
@@ -307,9 +377,9 @@ class Renderer:
             logger.debug(f"[RENDER] No albumart provided by media player")
 
         # --- DRAW PROGRESS BAR (Common for both modes) ---
-        pb_height = 6
+        pb_height = profile.progress_height
         pb_y = self.height - pb_height
-        draw.rectangle((0, pb_y, self.width, self.height), fill=(40, 40, 40)) # Background
+        draw.rectangle((0, pb_y, self.width, self.height), fill=profile.progress_track_color) # Background
         draw.rectangle((0, pb_y, int(self.width * progress), self.height), fill=accent_color) # Progress
 
         # --- DRAW STATUS ICON ---
@@ -319,27 +389,41 @@ class Renderer:
 
         if not show_capa_mode:
             # --- MODE 1: CENTERED TEXT ---
-            y_cursor = 35
+            y_cursor = 24 if profile.name == "high_contrast" else 35
             
             # Title (wrapped if needed, then centered)
             title_lines = textwrap.wrap(title, width=25)
             for line in title_lines[:2]:
-                y_cursor = self._draw_centered_text(draw, line, y_cursor, f_xl, (255, 255, 255))
+                y_cursor = self._draw_centered_text(draw, line, y_cursor, f_xl, profile.title_color)
             
-            y_cursor += 5
+            y_cursor += 6 if profile.name == "high_contrast" else 5
             # Artist
-            y_cursor = self._draw_centered_text(draw, artist[:40], y_cursor, f_large, (200, 200, 200))
+            y_cursor = self._draw_centered_text(draw, artist[:40], y_cursor, f_large, profile.artist_color)
             
             # Album
-            y_cursor = self._draw_centered_text(draw, album[:45], y_cursor, f_med, (120, 120, 120))
+            y_cursor = self._draw_centered_text(draw, album[:45], y_cursor, f_med, profile.album_color)
             
             # Tech Info at bottom center
             quality_str = f"{samplerate} | {bitdepth}" if samplerate and bitdepth else samplerate or bitdepth
             if quality_str:
                 qw, qh = draw.textbbox((0, 0), quality_str, font=f_tech)[2:]
-                box_y = pb_y - 50
-                draw.rectangle(((self.width - qw) // 2 - 10, box_y, (self.width + qw) // 2 + 10, box_y + 30), outline=accent_color, width=2)
-                draw.text(((self.width - qw) // 2, box_y + 3), quality_str, fill=accent_color, font=f_tech)
+                if profile.name == "high_contrast":
+                    box_y = pb_y - 56
+                    draw.rectangle(
+                        ((self.width - qw) // 2 - 16, box_y, (self.width + qw) // 2 + 16, box_y + 36),
+                        fill=(0, 0, 0),
+                        outline=profile.quality_box_color,
+                        width=3,
+                    )
+                    draw.text(((self.width - qw) // 2, box_y + 5), quality_str, fill=profile.quality_text_color, font=f_tech)
+                else:
+                    box_y = pb_y - 50
+                    draw.rectangle(
+                        ((self.width - qw) // 2 - 10, box_y, (self.width + qw) // 2 + 10, box_y + 30),
+                        outline=accent_color,
+                        width=2,
+                    )
+                    draw.text(((self.width - qw) // 2, box_y + 3), quality_str, fill=accent_color, font=f_tech)
 
         else:
             # --- MODE 2: COVER (CENTERED) ---
