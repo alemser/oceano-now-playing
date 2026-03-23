@@ -261,6 +261,33 @@ class TestImageResizing:
         assert resized.size == (320, 320)
 
 
+class TestMissingArtworkRendering:
+    """Test rendering when artwork is unavailable."""
+
+    def test_artwork_mode_renders_placeholder_card_when_art_missing(self, mock_renderer):
+        """Artwork mode should render a built-in placeholder instead of a blank screen."""
+        renderer = mock_renderer
+        rendered_images = []
+
+        with patch.object(renderer, '_write_to_fb', side_effect=lambda img: rendered_images.append(img.copy())):
+            renderer.render(
+                {
+                    'title': 'Exodus',
+                    'artist': 'Bob Marley & The Wailers',
+                    'album': 'Exodus',
+                    'albumart': '',
+                    'status': 'play',
+                    'seek': 30000,
+                    'duration': 180000,
+                },
+                show_capa_mode=True,
+            )
+
+        assert rendered_images
+        center_pixel = rendered_images[-1].getpixel((renderer.width // 2, renderer.height // 2 - 10))
+        assert center_pixel != (0, 0, 0)
+
+
 class TestFontHandling:
     """Test font loading and fallback logic."""
     

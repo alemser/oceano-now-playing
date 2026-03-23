@@ -195,6 +195,55 @@ class Renderer:
         self._write_to_fb(img)
         return img
 
+    def _render_missing_artwork_card(self, title, artist, album):
+        """Render a built-in placeholder card when artwork is unavailable."""
+        card = Image.new('RGB', (self.art_size, self.art_size), color=(18, 18, 18))
+        draw = ImageDraw.Draw(card)
+
+        accent = self.default_accent
+        muted = (90, 90, 90)
+        panel = (28, 28, 28)
+        highlight = (210, 210, 210)
+
+        draw.rounded_rectangle((0, 0, self.art_size - 1, self.art_size - 1), radius=28, fill=panel)
+        draw.rounded_rectangle((12, 12, self.art_size - 13, self.art_size - 13), radius=22, outline=accent, width=3)
+
+        for stripe_y in (36, 58, 80):
+            draw.rounded_rectangle((28, stripe_y, self.art_size - 28, stripe_y + 6), radius=3, fill=(40, 40, 40))
+
+        center_x = self.art_size // 2
+        center_y = 150
+        draw.ellipse((center_x - 62, center_y - 62, center_x + 62, center_y + 62), outline=highlight, width=4)
+        draw.ellipse((center_x - 18, center_y - 18, center_x + 18, center_y + 18), fill=accent)
+        draw.arc((center_x - 82, center_y - 82, center_x + 82, center_y + 82), start=210, end=332, fill=accent, width=5)
+
+        label_font = self.get_font(18, bold=True)
+        title_font = self.get_font(24, bold=True)
+        meta_font = self.get_font(16)
+
+        label = "NO COVER"
+        label_box = draw.textbbox((0, 0), label, font=label_font)
+        label_width = label_box[2] - label_box[0]
+        draw.text(((self.art_size - label_width) // 2, 230), label, fill=highlight, font=label_font)
+
+        title_text = (title or album or "Unknown Album")[:22]
+        artist_text = (artist or album or "Unknown Artist")[:28]
+        album_text = album[:28] if album else "Artwork unavailable"
+
+        title_box = draw.textbbox((0, 0), title_text, font=title_font)
+        title_width = title_box[2] - title_box[0]
+        draw.text(((self.art_size - title_width) // 2, 256), title_text, fill=(255, 255, 255), font=title_font)
+
+        artist_box = draw.textbbox((0, 0), artist_text, font=meta_font)
+        artist_width = artist_box[2] - artist_box[0]
+        draw.text(((self.art_size - artist_width) // 2, 286), artist_text, fill=(175, 175, 175), font=meta_font)
+
+        album_box = draw.textbbox((0, 0), album_text, font=meta_font)
+        album_width = album_box[2] - album_box[0]
+        draw.text(((self.art_size - album_width) // 2, 306), album_text, fill=muted, font=meta_font)
+
+        return card
+
     def render(self, data, show_capa_mode=False):
         """Renders the complete V2 interface."""
         if not data:
@@ -294,11 +343,13 @@ class Renderer:
 
         else:
             # --- MODE 2: COVER (CENTERED) ---
+            art_x = (self.width - self.art_size) // 2
+            art_y = (self.height - self.art_size) // 2 - 10  # Slight upward offset for progress bar
             if art:
-                # Center the album cover
-                art_x = (self.width - self.art_size) // 2
-                art_y = (self.height - self.art_size) // 2 - 10  # Slight upward offset for progress bar
                 img.paste(art, (art_x, art_y))
+            else:
+                placeholder_art = self._render_missing_artwork_card(title, artist, album)
+                img.paste(placeholder_art, (art_x, art_y))
 
         self._write_to_fb(img)
 
