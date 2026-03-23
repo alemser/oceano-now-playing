@@ -19,6 +19,7 @@ VOLUMIO_PLACEHOLDER_SHA256_HASHES = {
     "d38e8d8533672451d5a3572c0c8c7d4e89218277116bc24afe33af545597ec85",
 }
 VOLUMIO_DEFAULT_PLACEHOLDER_PATH = "/volumio/app/plugins/miscellanea/albumart/default.png"
+ARTWORK_PLACEHOLDER_RETRY_DELAY_SECONDS = 0.7
 
 
 class VolumioClient(MediaPlayer):
@@ -160,20 +161,32 @@ class VolumioClient(MediaPlayer):
 
         artist = state.get("artist", "")
         album = state.get("album", "")
-        full_url = self._build_artwork_url(art_url)
+        for attempt in (1, 2):
+            full_url = self._build_artwork_url(art_url)
+            try:
+                response = requests.get(full_url, timeout=timeout)
+                response.raise_for_status()
 
-        try:
-            response = requests.get(full_url, timeout=timeout)
-            response.raise_for_status()
+                art_bytes = response.content
+                art_image = Image.open(BytesIO(art_bytes)).convert("RGB")
 
-            art_bytes = response.content
-            art_image = Image.open(BytesIO(art_bytes)).convert("RGB")
+                is_placeholder, reason, sha256 = self._is_placeholder_image(art_bytes, art_image)
+                if not is_placeholder:
+                    if attempt > 1:
+                        logger.info(f"[ART RETRY] Volumio artwork recovered after placeholder for {artist} - {album}")
+                    return {
+                        "cache_key": art_url,
+                        "image": art_image,
+                        "source": "volumio",
+                    }
 
-            is_placeholder, reason, sha256 = self._is_placeholder_image(art_bytes, art_image)
-            if is_placeholder:
                 logger.warning(
                     f"[ART PLACEHOLDER] Detected Volumio default artwork ({reason}) sha256={sha256}"
                 )
+                if attempt == 1:
+                    time.sleep(ARTWORK_PLACEHOLDER_RETRY_DELAY_SECONDS)
+                    continue
+
                 fallback_art = ArtworkLookup.get_artwork(artist, album, timeout=timeout)
                 if fallback_art:
                     logger.info(f"[ART FALLBACK] Using Cover Art Archive for {artist} - {album}")
@@ -185,15 +198,11 @@ class VolumioClient(MediaPlayer):
 
                 logger.warning(f"[ART FALLBACK] No fallback artwork for {artist} - {album}")
                 return None
+            except requests.RequestException as e:
+                logger.warning(f"[ART ERROR] Failed to load artwork from {art_url}: {type(e).__name__}: {e}")
+                return None
+            except Exception as e:
+                logger.warning(f"[ART ERROR] Failed to decode artwork from {art_url}: {type(e).__name__}: {e}")
+                return None
 
-            return {
-                "cache_key": art_url,
-                "image": art_image,
-                "source": "volumio",
-            }
-        except requests.RequestException as e:
-            logger.warning(f"[ART ERROR] Failed to load artwork from {art_url}: {type(e).__name__}: {e}")
-            return None
-        except Exception as e:
-            logger.warning(f"[ART ERROR] Failed to decode artwork from {art_url}: {type(e).__name__}: {e}")
-            return None
+        return None

@@ -226,3 +226,49 @@ def test_volumio_resolve_artwork_returns_none_without_fallback(mock_get, mock_lo
         resolved = client.resolve_artwork(volumio_state_playing)
 
     assert resolved is None
+
+
+@patch('media_players.volumio.time.sleep')
+@patch('media_players.volumio.ArtworkLookup.get_artwork')
+@patch('media_players.volumio.requests.get')
+def test_volumio_resolve_artwork_retries_and_uses_native_art(
+    mock_get,
+    mock_lookup,
+    mock_sleep,
+    mock_volumio_client,
+    volumio_state_playing,
+):
+    """Retry once after placeholder and keep native Volumio artwork if it recovers."""
+    client, _ = mock_volumio_client
+
+    first_response = MagicMock()
+    first_response.status_code = 200
+    first_response.content = _image_bytes(color=(255, 0, 0))
+    first_response.headers = {'content-type': 'image/jpeg'}
+    first_response.raise_for_status.return_value = None
+
+    second_response = MagicMock()
+    second_response.status_code = 200
+    second_response.content = _image_bytes(color=(0, 255, 0))
+    second_response.headers = {'content-type': 'image/jpeg'}
+    second_response.raise_for_status.return_value = None
+
+    mock_get.side_effect = [first_response, second_response]
+    mock_lookup.return_value = Image.new('RGB', (20, 20), color='blue')
+
+    with patch.object(
+        client,
+        '_is_placeholder_image',
+        side_effect=[
+            (True, 'perceptual-dhash-match(distance=0)', 'placeholder-sha'),
+            (False, 'no-match', 'real-sha'),
+        ],
+    ):
+        resolved = client.resolve_artwork(volumio_state_playing)
+
+    assert resolved is not None
+    assert resolved['source'] == 'volumio'
+    assert resolved['cache_key'] == volumio_state_playing['albumart']
+    assert mock_get.call_count == 2
+    mock_sleep.assert_called_once()
+    mock_lookup.assert_not_called()
