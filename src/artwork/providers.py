@@ -32,7 +32,6 @@ class CoverArtArchive:
         candidates = [album.strip()]
         stripped = album.strip()
 
-        # Remove trailing edition/remaster qualifiers progressively.
         while True:
             updated = re.sub(r"\s*([\[(]).*?([\])])\s*$", "", stripped).strip()
             if updated == stripped:

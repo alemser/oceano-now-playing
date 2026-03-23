@@ -60,7 +60,7 @@ This will:
 
 ## Configuration
 
-You can customize the behavior by editing the constants at the top of `src/spi-now-playing.py` or by setting environment variables in the service file.
+You can customize the behavior in `src/config.py` or by setting environment variables in the service file.
 
 - **STANDBY_TIMEOUT**: Time in seconds of inactivity before the screen goes black (default: `600` = 10 minutes).
 - **CYCLE_TIME**: Time in seconds to switch from Text Mode to Album Art Mode (default: `30` seconds).
@@ -112,3 +112,22 @@ source venv/bin/activate
 ./src/spi-now-playing.py
 ```
 *Note: You may need to run as `sudo` if your user doesn't have permissions for `/dev/fb0`.*
+
+## Source Layout
+
+```text
+src/
+├── app/
+│   └── main.py              # Main controller and state loop
+├── artwork/
+│   └── providers.py         # Cover Art Archive fallback lookup
+├── audio_input/             # Audio input work in progress
+├── media_players/
+│   ├── base.py              # MediaPlayer abstract base class
+│   ├── volumio.py           # Volumio integration and artwork resolution
+│   ├── moode.py             # MoOde integration stub
+│   └── picore.py            # piCorePlayer integration stub
+├── config.py                # Application configuration
+├── renderer.py              # Framebuffer renderer
+└── spi-now-playing.py       # Thin compatibility entrypoint
+```

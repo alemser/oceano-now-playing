@@ -104,9 +104,18 @@ Push to GitHub and submit a PR with:
 ```
 spi-now-playing/
 ├── src/
-│   ├── spi-now-playing.py      # Main application
-│   ├── volumio.py              # Volumio WebSocket client
-│   └── renderer.py             # Display rendering logic
+│   ├── app/
+│   │   └── main.py             # Main application loop and state machine
+│   ├── artwork/
+│   │   └── providers.py        # Artwork fallback providers
+│   ├── media_players/
+│   │   ├── base.py             # MediaPlayer abstract interface
+│   │   ├── volumio.py          # Volumio WebSocket client
+│   │   ├── moode.py            # MoOde client stub
+│   │   └── picore.py           # piCorePlayer client stub
+│   ├── renderer.py             # Display rendering logic
+│   ├── config.py               # Configuration handling
+│   └── spi-now-playing.py      # Compatibility entrypoint
 ├── tests/
 │   ├── conftest.py             # Shared fixtures & mocks
 │   ├── test_volumio.py         # WebSocket API tests

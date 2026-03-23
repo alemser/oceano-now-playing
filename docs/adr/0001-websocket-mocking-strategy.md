@@ -4,12 +4,12 @@
 ✅ **Accepted** (Implemented, 12 tests passing)
 
 ## Context
-We need to test the Volumio WebSocket client (`volumio.py`) without requiring:
+We need to test the Volumio WebSocket client (`media_players/volumio.py`) without requiring:
 1. A running Volumio server (localhost:3000)
 2. Network access
 3. Complex test setup
 
-However, `volumio.py` imports `websocket` at module load time:
+However, `media_players/volumio.py` imports `websocket` at module load time:
 ```python
 from websocket import create_connection  # This happens immediately!
 ```
@@ -17,7 +17,7 @@ from websocket import create_connection  # This happens immediately!
 This means we can't use simple pytest mocking—we need to inject the mock **before** the module imports.
 
 ## Decision
-Use `monkeypatch.setitem(sys.modules, 'websocket', MockWebSocket)` to inject a mock WebSocket module at the pytest fixture level, then delete and reimport `volumio.py` per test for isolation.
+Use `monkeypatch.setitem(sys.modules, 'websocket', MockWebSocket)` to inject a mock WebSocket module at the pytest fixture level, then delete and reimport `media_players/volumio.py` per test for isolation.
 
 ## Implementation
 
@@ -79,7 +79,7 @@ def mock_volumio_client(mock_websocket, monkeypatch):
         del sys.modules['volumio']
     
     # Now import VolumioClient—it will use our mock
-    from volumio import VolumioClient
+    from media_players.volumio import VolumioClient
     
     client = VolumioClient('ws://localhost:3000/socket.io/?EIO=3&transport=websocket')
     client.connect()
@@ -112,11 +112,11 @@ from unittest.mock import patch
 
 @patch('websocket.create_connection')
 def test_volumio(mock_create):
-    from volumio import VolumioClient  # Already imported!
+    from media_players.volumio import VolumioClient  # Already imported!
     # Problem: volumio already cached the real websocket
 ```
 
-**Why rejected**: Python caches imports—`volumio.py` would already have imported the real `websocket` module.
+**Why rejected**: Python caches imports—`media_players/volumio.py` would already have imported the real `websocket` module.
 
 ### 2. Containerize Volumio (Real server in tests)
 ```yaml

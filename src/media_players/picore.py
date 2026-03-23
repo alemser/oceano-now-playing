@@ -11,7 +11,8 @@ the LMS JSON-RPC / CLI connection and message-parsing logic below.
 """
 
 import logging
-from media_player import MediaPlayer
+
+from media_players.base import MediaPlayer
 
 logger = logging.getLogger(__name__)
 

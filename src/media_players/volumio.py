@@ -10,8 +10,8 @@ import requests
 from PIL import Image
 from websocket import create_connection
 
-from artwork_providers import ArtworkLookup
-from media_player import MediaPlayer
+from artwork.providers import ArtworkLookup
+from media_players.base import MediaPlayer
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ VOLUMIO_PLACEHOLDER_SHA256_HASHES = {
     "d38e8d8533672451d5a3572c0c8c7d4e89218277116bc24afe33af545597ec85",
 }
 VOLUMIO_DEFAULT_PLACEHOLDER_PATH = "/volumio/app/plugins/miscellanea/albumart/default.png"
+
 
 class VolumioClient(MediaPlayer):
     def __init__(self, url: str) -> None:
@@ -69,21 +70,18 @@ class VolumioClient(MediaPlayer):
         try:
             self.ws.settimeout(timeout)
             result = self.ws.recv()
-            
-            # Socket.io heartbeat
+
             if result == '2':
                 self.ws.send('3')
                 return None
-                
-            # Check if it's a state message (pushState or getState response)
+
             if '"pushState"' in result:
                 start = result.find('{')
                 end = result.rfind('}')
                 if start != -1 and end != -1:
-                    json_str = result[start:end+1]
+                    json_str = result[start:end + 1]
                     return json.loads(json_str)
         except (TimeoutError, Exception):
-            # Timeouts are expected if Volumio doesn't send anything
             pass
         return None
 

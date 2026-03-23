@@ -11,7 +11,7 @@ from PIL import Image
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from artwork_providers import ArtworkLookup, CoverArtArchive
+from artwork.providers import ArtworkLookup, CoverArtArchive
 
 
 def _fake_image_bytes(color=(255, 0, 0)):
@@ -32,7 +32,7 @@ class TestCoverArtArchive:
         assert candidates[0] == 'Exodus (2013 Remaster)'
         assert 'Exodus' in candidates
 
-    @patch('artwork_providers.requests.get')
+    @patch('artwork.providers.requests.get')
     def test_search_releases_uses_normalized_album_candidate(self, mock_get):
         """MusicBrainz lookup should retry with normalized album title."""
         first_response = MagicMock()
@@ -61,7 +61,7 @@ class TestCoverArtArchive:
         assert 'release:"Exodus (2013 Remaster)"' in first_query
         assert 'release:"Exodus"' in second_query
 
-    @patch('artwork_providers.requests.get')
+    @patch('artwork.providers.requests.get')
     def test_fetch_artwork_falls_back_to_release_group_front(self, mock_get):
         """Artwork fetch should try release-group front URL if release URLs 404."""
         search_response = MagicMock()
@@ -104,7 +104,7 @@ class TestCoverArtArchive:
         assert 'https://coverartarchive.org/release/release-123/front' in requested_urls
         assert 'https://coverartarchive.org/release-group/group-456/front' in requested_urls
 
-    @patch('artwork_providers.requests.get')
+    @patch('artwork.providers.requests.get')
     def test_fetch_artwork_returns_none_when_all_candidates_fail(self, mock_get):
         """Artwork fetch should return None if all Cover Art Archive URLs fail."""
         search_response = MagicMock()
@@ -151,7 +151,7 @@ class TestArtworkLookup:
         """Clear cache before each test."""
         ArtworkLookup.clear_cache()
 
-    @patch('artwork_providers.CoverArtArchive.fetch_artwork')
+    @patch('artwork.providers.CoverArtArchive.fetch_artwork')
     def test_get_artwork_success(self, mock_fetch):
         """Get artwork for album with fallback source."""
         test_image = Image.new('RGB', (250, 250), color='blue')
@@ -162,7 +162,7 @@ class TestArtworkLookup:
         assert art is not None
         assert isinstance(art, Image.Image)
 
-    @patch('artwork_providers.CoverArtArchive.fetch_artwork')
+    @patch('artwork.providers.CoverArtArchive.fetch_artwork')
     def test_get_artwork_caching(self, mock_fetch):
         """Artwork lookup caches results."""
         test_image = Image.new('RGB', (250, 250), color='green')
@@ -178,7 +178,7 @@ class TestArtworkLookup:
         assert call_count_2 == 1
         assert art1 is art2
 
-    @patch('artwork_providers.CoverArtArchive.fetch_artwork')
+    @patch('artwork.providers.CoverArtArchive.fetch_artwork')
     def test_get_artwork_not_found_caching(self, mock_fetch):
         """Cache negative results to avoid repeated lookups."""
         mock_fetch.return_value = None
@@ -203,7 +203,7 @@ class TestArtworkLookup:
         ArtworkLookup.clear_cache()
         assert len(ArtworkLookup._cache) == 0
 
-    @patch('artwork_providers.CoverArtArchive.fetch_artwork')
+    @patch('artwork.providers.CoverArtArchive.fetch_artwork')
     def test_cache_overflow(self, mock_fetch):
         """Cache limit prevents unbounded memory growth."""
         original_size = ArtworkLookup.MAX_CACHE_SIZE

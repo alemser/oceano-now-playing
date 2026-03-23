@@ -21,9 +21,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 @pytest.fixture
 def media_player_class():
     """Import a fresh copy of MediaPlayer for each test."""
-    if 'media_player' in sys.modules:
-        del sys.modules['media_player']
-    from media_player import MediaPlayer
+    if 'media_players.base' in sys.modules:
+        del sys.modules['media_players.base']
+    from media_players.base import MediaPlayer
     return MediaPlayer
 
 
@@ -34,10 +34,10 @@ def volumio_client_class(monkeypatch):
     mock_ws_module.WebSocketException = Exception
     monkeypatch.setitem(sys.modules, 'websocket', mock_ws_module)
 
-    if 'volumio' in sys.modules:
-        del sys.modules['volumio']
+    if 'media_players.volumio' in sys.modules:
+        del sys.modules['media_players.volumio']
 
-    from volumio import VolumioClient
+    from media_players.volumio import VolumioClient
     return VolumioClient
 
 
@@ -119,7 +119,14 @@ def _load_detect_function(monkeypatch, mock_ws_module):
         A tuple of (detect_media_player_function, Config_object)
     """
     monkeypatch.setitem(sys.modules, 'websocket', mock_ws_module)
-    for mod in ('volumio', 'moode', 'picore_player', 'config', 'spi_now_playing'):
+    for mod in (
+        'media_players.volumio',
+        'media_players.moode',
+        'media_players.picore',
+        'config',
+        'spi_now_playing',
+        'app.main',
+    ):
         sys.modules.pop(mod, None)
     
     # Import config module (not spi_now_playing yet)
@@ -152,7 +159,7 @@ def test_detect_media_player_default_returns_volumio(monkeypatch):
     mock_ws_module.WebSocketException = Exception
     mock_ws_module.create_connection = MagicMock()
     fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from volumio import VolumioClient
+    from media_players.volumio import VolumioClient
     player = fn(cfg)
     assert isinstance(player, VolumioClient)
 
@@ -164,7 +171,7 @@ def test_detect_media_player_volumio_explicit(monkeypatch):
     mock_ws_module.WebSocketException = Exception
     mock_ws_module.create_connection = MagicMock()
     fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from volumio import VolumioClient
+    from media_players.volumio import VolumioClient
     player = fn(cfg)
     assert isinstance(player, VolumioClient)
 
@@ -175,7 +182,7 @@ def test_detect_media_player_moode(monkeypatch):
     mock_ws_module = MagicMock()
     mock_ws_module.WebSocketException = Exception
     fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from moode import MoodeClient
+    from media_players.moode import MoodeClient
     player = fn(cfg)
     assert isinstance(player, MoodeClient)
 
@@ -186,7 +193,7 @@ def test_detect_media_player_picore(monkeypatch):
     mock_ws_module = MagicMock()
     mock_ws_module.WebSocketException = Exception
     fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from picore_player import PiCorePlayerClient
+    from media_players.picore import PiCorePlayerClient
     player = fn(cfg)
     assert isinstance(player, PiCorePlayerClient)
 
@@ -199,7 +206,7 @@ def test_detect_media_player_auto_detects_volumio(monkeypatch):
     # Mock successful connection for Volumio
     mock_ws_module.create_connection = MagicMock(return_value=MagicMock())
     fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from volumio import VolumioClient
+    from media_players.volumio import VolumioClient
     player = fn(cfg)
     # Should auto-detect and return Volumio
     assert isinstance(player, VolumioClient)
@@ -213,7 +220,7 @@ def test_detect_media_player_auto_falls_back_to_volumio_on_failure(monkeypatch):
     # Mock all connections fail
     mock_ws_module.create_connection = MagicMock(side_effect=Exception("All unavailable"))
     fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from volumio import VolumioClient
+    from media_players.volumio import VolumioClient
     player = fn(cfg)
     # Should fall back to Volumio even when detection fails
     assert isinstance(player, VolumioClient)

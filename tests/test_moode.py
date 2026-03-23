@@ -16,15 +16,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 @pytest.fixture
 def moode_client():
     """Create a MoodeClient for testing."""
-    if 'moode' in sys.modules:
-        del sys.modules['moode']
-    from moode import MoodeClient
+    if 'media_players.moode' in sys.modules:
+        del sys.modules['media_players.moode']
+    from media_players.moode import MoodeClient
     return MoodeClient("http://localhost/engine-mpd.php")
 
 
 def test_moode_client_is_media_player(moode_client):
     """MoodeClient implements the MediaPlayer interface."""
-    from media_player import MediaPlayer
+    from media_players.base import MediaPlayer
     assert isinstance(moode_client, MediaPlayer)
 
 
@@ -53,8 +53,8 @@ def test_moode_client_close_succeeds(moode_client):
 
 def test_moode_client_custom_url():
     """MoodeClient accepts a custom URL."""
-    if 'moode' in sys.modules:
-        del sys.modules['moode']
-    from moode import MoodeClient
+    if 'media_players.moode' in sys.modules:
+        del sys.modules['media_players.moode']
+    from media_players.moode import MoodeClient
     client = MoodeClient(url="http://192.168.1.50/engine-mpd.php")
     assert client.url == "http://192.168.1.50/engine-mpd.php"

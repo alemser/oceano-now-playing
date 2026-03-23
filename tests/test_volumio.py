@@ -162,7 +162,7 @@ def _image_bytes(color=(255, 0, 0)):
     return buffer.getvalue()
 
 
-@patch('volumio.requests.get')
+@patch('media_players.volumio.requests.get')
 def test_volumio_resolve_artwork_success(mock_get, mock_volumio_client, volumio_state_playing):
     """Resolve Volumio artwork into a renderer-friendly object."""
     client, _ = mock_volumio_client
@@ -183,8 +183,8 @@ def test_volumio_resolve_artwork_success(mock_get, mock_volumio_client, volumio_
     assert resolved['image'].size == (16, 16)
 
 
-@patch('volumio.ArtworkLookup.get_artwork')
-@patch('volumio.requests.get')
+@patch('media_players.volumio.ArtworkLookup.get_artwork')
+@patch('media_players.volumio.requests.get')
 def test_volumio_resolve_artwork_uses_fallback(mock_get, mock_lookup, mock_volumio_client, volumio_state_playing):
     """Use fallback artwork when Volumio returns its default placeholder."""
     client, _ = mock_volumio_client
@@ -208,8 +208,8 @@ def test_volumio_resolve_artwork_uses_fallback(mock_get, mock_lookup, mock_volum
     assert resolved['image'] is fallback_image
 
 
-@patch('volumio.ArtworkLookup.get_artwork')
-@patch('volumio.requests.get')
+@patch('media_players.volumio.ArtworkLookup.get_artwork')
+@patch('media_players.volumio.requests.get')
 def test_volumio_resolve_artwork_returns_none_without_fallback(mock_get, mock_lookup, mock_volumio_client, volumio_state_playing):
     """Return None when placeholder artwork has no fallback match."""
     client, _ = mock_volumio_client
