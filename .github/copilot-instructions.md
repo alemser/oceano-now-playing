@@ -12,8 +12,12 @@
 
 ```
 src/
-├── spi-now-playing.py      # Main controller (state machine, signal handlers, ~400 lines)
-├── volumio.py              # WebSocket client for Volumio API (Socket.io protocol)
+├── app/
+│   └── main.py             # Main controller (state machine, signal handlers, ~400 lines)
+├── media_players/
+│   └── volumio.py          # WebSocket client for Volumio API (Socket.io protocol)
+├── artwork/
+│   └── providers.py        # Cover Art Archive fallback providers
 └── renderer.py             # Display rendering via PIL to framebuffer
 
 tests/
@@ -34,7 +38,7 @@ Configuration/
 
 ## 🔑 Key Components & Patterns
 
-### 1. **WebSocket Client** (`volumio.py`)
+### 1. **WebSocket Client** (`media_players/volumio.py`)
 **Pattern**: Socket.io protocol with heartbeat handling
 
 ```python
@@ -54,7 +58,7 @@ Configuration/
 - Handling new message types
 - Connection error recovery
 
-### 2. **State Machine** (`spi-now-playing.py`)
+### 2. **State Machine** (`app/main.py`)
 **Pattern**: Track display state, handle transitions, manage timing
 
 ```python
@@ -139,7 +143,7 @@ tests/test_renderer.py (15+ tests)
 
 # Why monkeypatch + sys.modules?
 - socketio imports websocket at module load time
-- Must inject mock BEFORE importing volumio.py
+- Must inject mock BEFORE importing media_players/volumio.py
 - Delete volumio from sys.modules between tests for isolation
 ```
 
@@ -264,7 +268,7 @@ When suggesting code changes:
 def volumio_state_playing():
     return {'title': '...', 'someNewField': 'value', ...}
 
-# 2. Update receive_message parser in volumio.py:
+# 2. Update receive_message parser in media_players/volumio.py:
 if '"pushState"' in result:
     json_str = result[start:end+1]
     state = json.loads(json_str)
@@ -279,7 +283,7 @@ def test_volumio_new_field(mock_volumio_client):
 
 ### Handling New Display States
 ```python
-# 1. Update state machine logic in spi-now-playing.py
+# 1. Update state machine logic in app/main.py
 # 2. Add test:
 def test_new_state_transition():
     # Setup old state
@@ -310,8 +314,8 @@ def test_new_state_transition():
 
 ## 📚 Key Files to Review First
 
-1. **src/volumio.py** - WebSocket protocol understanding
-2. **src/spi-now-playing.py** - State machine + global state
+1. **src/media_players/volumio.py** - WebSocket protocol understanding
+2. **src/app/main.py** - State machine + global state
 3. **tests/conftest.py** - Mock strategy + fixtures
 4. **tests/test_volumio.py** - WebSocket test patterns
 5. **tests/test_state_machine.py** - State transition testing

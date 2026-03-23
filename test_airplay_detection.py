@@ -17,7 +17,7 @@ import tempfile
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from moode import MoodeClient
+from media_players.moode import MoodeClient
 
 # Enable debug logging
 logging.basicConfig(level=logging.DEBUG, format='%(name)s - %(levelname)s - %(message)s')
@@ -56,7 +56,7 @@ def test_metadata_file() -> bool:
         temp_file = f.name
     
     # Monkey-patch the SHAIRPORT_METADATA_FILE path
-    import moode as moode_module
+    import media_players.moode as moode_module
     original_path = moode_module.SHAIRPORT_METADATA_FILE
     original_cache = moode_module._METADATA_CACHE.copy()
     
@@ -85,7 +85,7 @@ def test_empty_metadata_file():
     print("\n=== TEST 4: Empty/Missing Metadata File ===")
     
     # Test non-existent file
-    import moode as moode_module
+    import media_players.moode as moode_module
     original_path = moode_module.SHAIRPORT_METADATA_FILE
     original_cache = moode_module._METADATA_CACHE.copy()
     

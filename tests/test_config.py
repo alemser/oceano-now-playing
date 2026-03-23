@@ -16,7 +16,8 @@ def clean_env():
     """Remove config-related env vars between tests."""
     config_vars = [
         'FB_DEVICE', 'COLOR_FORMAT', 'MEDIA_PLAYER',
-        'VOLUMIO_URL', 'MOODE_URL', 'LMS_URL', 'STANDBY_TIMEOUT'
+        'VOLUMIO_URL', 'MOODE_URL', 'LMS_URL', 'CYCLE_TIME', 'STANDBY_TIMEOUT',
+        'EXTERNAL_ARTWORK_ENABLED'
     ]
     original = {}
     for var in config_vars:
@@ -39,6 +40,7 @@ def test_config_defaults():
     assert cfg.framebuffer_device == "/dev/fb0"
     assert cfg.color_format == "RGB565"
     assert cfg.media_player_type == "auto"
+    assert cfg.external_artwork_enabled is True
     assert cfg.mode_cycle_time == 30
     assert cfg.standby_timeout == 600
 
@@ -95,10 +97,38 @@ def test_config_env_STANDBY_TIMEOUT(monkeypatch):
     assert cfg.standby_timeout == 1200
 
 
+def test_config_env_CYCLE_TIME(monkeypatch):
+    """Config loads and parses CYCLE_TIME from environment."""
+    monkeypatch.setenv("CYCLE_TIME", "45")
+    cfg = Config()
+    assert cfg.mode_cycle_time == 45
+
+
+def test_config_env_CYCLE_TIME_invalid(monkeypatch):
+    """Config raises ValueError for invalid CYCLE_TIME."""
+    monkeypatch.setenv("CYCLE_TIME", "not_a_number")
+    with pytest.raises(ValueError, match="Invalid CYCLE_TIME or STANDBY_TIMEOUT"):
+        Config()
+
+
 def test_config_env_STANDBY_TIMEOUT_invalid(monkeypatch):
     """Config raises ValueError for invalid STANDBY_TIMEOUT."""
     monkeypatch.setenv("STANDBY_TIMEOUT", "not_a_number")
-    with pytest.raises(ValueError, match="Invalid STANDBY_TIMEOUT"):
+    with pytest.raises(ValueError, match="Invalid CYCLE_TIME or STANDBY_TIMEOUT"):
+        Config()
+
+
+def test_config_env_external_artwork_enabled_false(monkeypatch):
+    """Config loads EXTERNAL_ARTWORK_ENABLED from environment."""
+    monkeypatch.setenv("EXTERNAL_ARTWORK_ENABLED", "false")
+    cfg = Config()
+    assert cfg.external_artwork_enabled is False
+
+
+def test_config_env_external_artwork_enabled_invalid(monkeypatch):
+    """Config rejects invalid EXTERNAL_ARTWORK_ENABLED values."""
+    monkeypatch.setenv("EXTERNAL_ARTWORK_ENABLED", "maybe")
+    with pytest.raises(ValueError, match="Invalid EXTERNAL_ARTWORK_ENABLED"):
         Config()
 
 

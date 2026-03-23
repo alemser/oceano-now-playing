@@ -59,8 +59,9 @@ Homepage = "https://github.com/alemser/spi-now-playing"
 Repository = "https://github.com/alemser/spi-now-playing.git"
 Issues = "https://github.com/alemser/spi-now-playing/issues"
 
-[tool.setuptools]
-packages = ["src"]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["app", "artwork", "media_players"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

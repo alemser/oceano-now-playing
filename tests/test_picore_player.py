@@ -16,15 +16,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 @pytest.fixture
 def picore_client():
     """Provide a fresh PiCorePlayerClient for each test."""
-    if 'picore_player' in sys.modules:
-        del sys.modules['picore_player']
-    from picore_player import PiCorePlayerClient
+    if 'media_players.picore' in sys.modules:
+        del sys.modules['media_players.picore']
+    from media_players.picore import PiCorePlayerClient
     return PiCorePlayerClient()
 
 
 def test_picore_client_is_media_player(picore_client):
     """PiCorePlayerClient is a subclass of MediaPlayer."""
-    from media_player import MediaPlayer
+    from media_players.base import MediaPlayer
     assert isinstance(picore_client, MediaPlayer)
 
 
@@ -51,8 +51,8 @@ def test_picore_client_close_does_not_raise(picore_client):
 
 def test_picore_client_custom_url():
     """PiCorePlayerClient accepts a custom URL."""
-    if 'picore_player' in sys.modules:
-        del sys.modules['picore_player']
-    from picore_player import PiCorePlayerClient
+    if 'media_players.picore' in sys.modules:
+        del sys.modules['media_players.picore']
+    from media_players.picore import PiCorePlayerClient
     client = PiCorePlayerClient(url="ws://192.168.1.50:9000")
     assert client.url == "ws://192.168.1.50:9000"

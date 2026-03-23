@@ -15,7 +15,7 @@
                     │ (42["pushState", {...}])
                     │
         ┌───────────▼──────────────┐
-        │   volumio.py             │
+        │ media_players/volumio.py │
         │   WebSocket Client       │
         │   (Threaded receiver)    │
         └────────────┬─────────────┘
@@ -24,7 +24,7 @@
                      │ (Thread-safe)
                      │
         ┌────────────▼────────────────┐
-        │  spi-now-playing.py         │
+        │    app/main.py              │
         │  State Machine              │
         │  + Event Handler            │
         └────────────┬─────────────────┘
@@ -53,7 +53,7 @@
 
 ## Component Architecture
 
-### 1. WebSocket Client (`volumio.py`)
+### 1. WebSocket Client (`media_players/volumio.py`)
 
 **Responsibility**: Receive playback state updates from Volumio
 
@@ -107,7 +107,7 @@ is_connected() -> bool
 
 **Threading**:
 ```python
-# Conceptual (actual implementation in spi-now-playing.py):
+# Conceptual (actual implementation in app/main.py):
 while running:
     state = client.receive_message(timeout=1.0)
     if state:
@@ -116,7 +116,7 @@ while running:
 
 ---
 
-### 2. State Machine (`spi-now-playing.py`)
+### 2. State Machine (`app/main.py`)
 
 **Responsibility**: Manage display state, handle transitions, coordinate timing
 
@@ -388,7 +388,7 @@ def write_to_framebuffer(buffer: bytes) -> None:
 2. WebSocket server sends pushState message
    42["pushState",{...}]
 
-3. volumio.py receive thread captures message
+3. media_players/volumio.py receive thread captures message
    Parses JSON → dict
 
 4. Main loop receives state via queue
@@ -462,11 +462,11 @@ def write_to_framebuffer(buffer: bytes) -> None:
 
 **Mock Strategy**:
 ```python
-# conftest.py injects MockWebSocket before volumio.py imports websocket
+# conftest.py injects MockWebSocket before media_players/volumio.py imports websocket
 # This allows testing WebSocket logic without real server
 
 # Key insight: monkeypatch must happen BEFORE import
-# Otherwise volumio.py caches real websocket module
+# Otherwise media_players/volumio.py caches real websocket module
 ```
 
 **State Machine Testing**:

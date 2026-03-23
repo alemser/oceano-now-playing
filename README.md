@@ -60,14 +60,42 @@ This will:
 
 ## Configuration
 
-You can customize the behavior by editing the constants at the top of `src/spi-now-playing.py` or by setting environment variables in the service file.
+You can customize the behavior in `src/config.py` or by setting environment variables in the service file. These are the current runtime defaults:
 
-- **STANDBY_TIMEOUT**: Time in seconds of inactivity before the screen goes black (default: `600` = 10 minutes).
-- **CYCLE_TIME**: Time in seconds to switch from Text Mode to Album Art Mode (default: `30` seconds).
-- **FB_DEVICE**: Framebuffer device path (default: `/dev/fb0`).
-- **COLOR_FORMAT**: Color encoding for the display, either `RGB565` or `BGR565` (default: `RGB565`). If your reds look blue and vice-versa, try switching this.
+| Setting | Default | How to override |
+| --- | --- | --- |
+| `FB_DEVICE` | `/dev/fb0` | Environment variable or edit `Config.framebuffer_device` |
+| `COLOR_FORMAT` | `RGB565` | Environment variable or edit `Config.color_format` |
+| `MEDIA_PLAYER` | `auto` | Environment variable or edit `Config.media_player_type` |
+| `VOLUMIO_URL` | `ws://localhost:3000/socket.io/?EIO=3&transport=websocket` | Environment variable or edit `Config.volumio_url` |
+| `MOODE_URL` | `http://localhost/engine-mpd.php` | Environment variable or edit `Config.moode_url` |
+| `LMS_URL` | `ws://localhost:9000` | Environment variable or edit `Config.lms_url` |
+| `EXTERNAL_ARTWORK_ENABLED` | `true` | Environment variable using `true/false`, `on/off`, `yes/no`, or `1/0` |
+| `CYCLE_TIME` | `30` | Environment variable or edit `Config.mode_cycle_time` |
+| `STANDBY_TIMEOUT` | `600` | Environment variable or edit `Config.standby_timeout` |
 
-To change these via the service, edit `/etc/systemd/system/spi-now-playing.service` and add `Environment="STANDBY_TIMEOUT=600"` under the `[Service]` section.
+Notes:
+
+- `MEDIA_PLAYER=auto` tries to detect the active backend automatically.
+- `EXTERNAL_ARTWORK_ENABLED=true` allows fallback artwork lookup from external services when Volumio only returns its placeholder image.
+- `EXTERNAL_ARTWORK_ENABLED=false` keeps Volumio's own artwork behavior intact, including its default placeholder when nothing better is available.
+- `COLOR_FORMAT=BGR565` is useful if red and blue look swapped on your panel.
+
+To change these via the service, edit `/etc/systemd/system/spi-now-playing.service` and add entries under `[Service]`, for example:
+
+```ini
+Environment="MEDIA_PLAYER=volumio"
+Environment="CYCLE_TIME=45"
+Environment="STANDBY_TIMEOUT=900"
+Environment="EXTERNAL_ARTWORK_ENABLED=false"
+```
+
+After changing the service file, reload and restart the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart spi-now-playing.service
+```
 
 ## Service Management
 
@@ -112,3 +140,22 @@ source venv/bin/activate
 ./src/spi-now-playing.py
 ```
 *Note: You may need to run as `sudo` if your user doesn't have permissions for `/dev/fb0`.*
+
+## Source Layout
+
+```text
+src/
+├── app/
+│   └── main.py              # Main controller and state loop
+├── artwork/
+│   └── providers.py         # Cover Art Archive fallback lookup
+├── audio_input/             # Audio input work in progress
+├── media_players/
+│   ├── base.py              # MediaPlayer abstract base class
+│   ├── volumio.py           # Volumio integration and artwork resolution
+│   ├── moode.py             # MoOde integration stub
+│   └── picore.py            # piCorePlayer integration stub
+├── config.py                # Application configuration
+├── renderer.py              # Framebuffer renderer
+└── spi-now-playing.py       # Thin compatibility entrypoint
+```

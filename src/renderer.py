@@ -1,33 +1,25 @@
 import os
-import time
 import textwrap
 import logging
-import hashlib
-from io import BytesIO
 import numpy as np
-import requests
-from PIL import Image, ImageDraw, ImageFont, ImageStat
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
-# Known Volumio placeholder image hash (/volumio/app/plugins/miscellanea/albumart/default.png)
-VOLUMIO_PLACEHOLDER_SHA256 = "c9c0eb5de9ba0d540f0784f2de757a18ef095005032e97fd559ce74430167db1"
-
 class Renderer:
-    def __init__(self, width=480, height=320, fb_device="/dev/fb0", color_format="RGB565", volumio_host="localhost"):
+    def __init__(self, width=480, height=320, fb_device="/dev/fb0", color_format="RGB565"):
         self.width = width
         self.height = height
         self.fb_device = fb_device
         self.color_format = color_format.upper()
-        self.volumio_host = volumio_host
         self.fb_handle = None
         self.art_cache = {}  # Cache for resized images and their dominant colors
+        self.art_cache_meta = {}  # Cache metadata keyed by artwork URL
         self.art_size = 320
         self.art_x, self.art_y = 10, 0
         
         # Default accent color (Volumio green)
         self.default_accent = (60, 180, 60)
-        self.placeholder_dhash = os.getenv("VOLUMIO_PLACEHOLDER_DHASH", "").lower()
         
         # Try to open the framebuffer once
         self._open_fb()
@@ -128,36 +120,6 @@ class Renderer:
                 return ImageFont.truetype(path, size)
         return ImageFont.load_default()
 
-    def _compute_dhash(self, image, hash_size=8):
-        """Compute a simple difference hash (dHash) for perceptual matching."""
-        gray = image.convert("L").resize((hash_size + 1, hash_size), Image.Resampling.BILINEAR)
-        pixels = np.array(gray)
-        diff = pixels[:, 1:] > pixels[:, :-1]
-        # Convert boolean matrix into hex string
-        bits = ''.join('1' if v else '0' for v in diff.flatten())
-        return f"{int(bits, 2):0{hash_size * hash_size // 4}x}"
-
-    def _hamming_distance(self, hex_a, hex_b):
-        """Compute Hamming distance between two equal-length hex strings."""
-        if len(hex_a) != len(hex_b):
-            return 999
-        return sum(ch1 != ch2 for ch1, ch2 in zip(f"{int(hex_a, 16):0{len(hex_a) * 4}b}", f"{int(hex_b, 16):0{len(hex_b) * 4}b}"))
-
-    def _is_volumio_placeholder_image(self, image_bytes, image):
-        """Detect Volumio default placeholder via exact hash or optional perceptual hash."""
-        sha256 = hashlib.sha256(image_bytes).hexdigest()
-        if sha256 == VOLUMIO_PLACEHOLDER_SHA256:
-            return True, "exact-sha256-match", sha256
-
-        # Optional perceptual fallback: enable by setting VOLUMIO_PLACEHOLDER_DHASH env var.
-        if self.placeholder_dhash:
-            fetched_dhash = self._compute_dhash(image)
-            distance = self._hamming_distance(fetched_dhash, self.placeholder_dhash)
-            if distance <= 6:
-                return True, f"perceptual-dhash-match(distance={distance})", sha256
-
-        return False, "no-match", sha256
-
     def _get_dominant_color(self, img):
         """Extracts the dominant color from an image."""
         small_img = img.resize((1, 1), Image.Resampling.BILINEAR)
@@ -233,6 +195,55 @@ class Renderer:
         self._write_to_fb(img)
         return img
 
+    def _render_missing_artwork_card(self, title, artist, album):
+        """Render a built-in placeholder card when artwork is unavailable."""
+        card = Image.new('RGB', (self.art_size, self.art_size), color=(18, 18, 18))
+        draw = ImageDraw.Draw(card)
+
+        accent = self.default_accent
+        muted = (90, 90, 90)
+        panel = (28, 28, 28)
+        highlight = (210, 210, 210)
+
+        draw.rounded_rectangle((0, 0, self.art_size - 1, self.art_size - 1), radius=28, fill=panel)
+        draw.rounded_rectangle((12, 12, self.art_size - 13, self.art_size - 13), radius=22, outline=accent, width=3)
+
+        for stripe_y in (36, 58, 80):
+            draw.rounded_rectangle((28, stripe_y, self.art_size - 28, stripe_y + 6), radius=3, fill=(40, 40, 40))
+
+        center_x = self.art_size // 2
+        center_y = 150
+        draw.ellipse((center_x - 62, center_y - 62, center_x + 62, center_y + 62), outline=highlight, width=4)
+        draw.ellipse((center_x - 18, center_y - 18, center_x + 18, center_y + 18), fill=accent)
+        draw.arc((center_x - 82, center_y - 82, center_x + 82, center_y + 82), start=210, end=332, fill=accent, width=5)
+
+        label_font = self.get_font(18, bold=True)
+        title_font = self.get_font(24, bold=True)
+        meta_font = self.get_font(16)
+
+        label = "NO COVER"
+        label_box = draw.textbbox((0, 0), label, font=label_font)
+        label_width = label_box[2] - label_box[0]
+        draw.text(((self.art_size - label_width) // 2, 230), label, fill=highlight, font=label_font)
+
+        title_text = (title or album or "Unknown Album")[:22]
+        artist_text = (artist or album or "Unknown Artist")[:28]
+        album_text = album[:28] if album else "Artwork unavailable"
+
+        title_box = draw.textbbox((0, 0), title_text, font=title_font)
+        title_width = title_box[2] - title_box[0]
+        draw.text(((self.art_size - title_width) // 2, 256), title_text, fill=(255, 255, 255), font=title_font)
+
+        artist_box = draw.textbbox((0, 0), artist_text, font=meta_font)
+        artist_width = artist_box[2] - artist_box[0]
+        draw.text(((self.art_size - artist_width) // 2, 286), artist_text, fill=(175, 175, 175), font=meta_font)
+
+        album_box = draw.textbbox((0, 0), album_text, font=meta_font)
+        album_width = album_box[2] - album_box[0]
+        draw.text(((self.art_size - album_width) // 2, 306), album_text, fill=muted, font=meta_font)
+
+        return card
+
     def render(self, data, show_capa_mode=False):
         """Renders the complete V2 interface."""
         if not data:
@@ -262,8 +273,6 @@ class Renderer:
         albumart = data.get('albumart', '')
         status = data.get('status', 'stop')
         
-        logger.info(f"[RENDER] Title: {title}, Artist: {artist}, Album: {album}, Status: {status}, Albumart: {albumart}")
-        
         # Progress Calculation
         seek = data.get('seek', 0) or 0
         if seek is None:
@@ -281,14 +290,19 @@ class Renderer:
         # Get Art and Accent Color
         accent_color = self.default_accent
         art = None
-        if albumart:
-            logger.debug(f"[RENDER] Fetching artwork: {albumart}")
-            art_data = self._get_cached_art(albumart)
+        resolved_artwork = data.get('_resolved_artwork')
+        if resolved_artwork:
+            art_data = self._get_cached_art(
+                resolved_artwork.get('cache_key'),
+                resolved_artwork.get('image'),
+                source=resolved_artwork.get('source', 'unknown')
+            )
             if art_data:
                 art, accent_color = art_data
-                logger.info(f"[RENDER] Artwork loaded successfully")
             else:
                 logger.warning(f"[RENDER] Failed to load artwork, using default accent")
+        elif albumart:
+            logger.debug("[RENDER] Media player did not provide resolved artwork")
         else:
             logger.debug(f"[RENDER] No albumart provided by media player")
 
@@ -329,76 +343,45 @@ class Renderer:
 
         else:
             # --- MODE 2: COVER (CENTERED) ---
+            art_x = (self.width - self.art_size) // 2
+            art_y = (self.height - self.art_size) // 2 - 10  # Slight upward offset for progress bar
             if art:
-                # Center the album cover
-                art_x = (self.width - self.art_size) // 2
-                art_y = (self.height - self.art_size) // 2 - 10  # Slight upward offset for progress bar
                 img.paste(art, (art_x, art_y))
+            else:
+                placeholder_art = self._render_missing_artwork_card(title, artist, album)
+                img.paste(placeholder_art, (art_x, art_y))
 
         self._write_to_fb(img)
 
     def clear_art_cache(self):
         """Clears the album art cache."""
         self.art_cache.clear()
+        self.art_cache_meta.clear()
 
-    def _fetch_artwork_on_cache_miss(self, art_url):
-        """Retrieve and process artwork for cache misses.
+    def _prepare_artwork_on_cache_miss(self, artwork_image):
+        """Resize resolved artwork and compute its dominant color."""
+        accent = self._get_dominant_color(artwork_image)
 
-        This function performs network fetch, image decode, dominant color
-        extraction, and resize in one place to make cache-miss debugging easier.
-        """
-        # Build URL and add cache buster if it's a relative path from Volumio
-        if art_url.startswith('/'):
-            url = f"http://{self.volumio_host}:3000{art_url}"
-            # Add a timestamp to bypass any server-side caching if the URL is too generic
-            if "?" in url:
-                url += f"&t={int(time.time())}"
-            else:
-                url += f"?t={int(time.time())}"
-        else:
-            url = art_url
-
-        logger.debug(f"[ART FETCH] Full URL: {url}")
-        res = requests.get(url, timeout=3)
-        logger.debug(
-            f"[ART FETCH] Status: {res.status_code}, Size: {len(res.content)} bytes, "
-            f"Content-Type: {res.headers.get('content-type', 'unknown')}"
-        )
-
-        art_bytes = res.content
-        art = Image.open(BytesIO(art_bytes)).convert("RGB")
-        logger.debug(f"[ART FETCH] Image format: {art.format}, Size: {art.size}, Mode: {art.mode}")
-
-        is_placeholder, reason, sha256 = self._is_volumio_placeholder_image(art_bytes, art)
-        if is_placeholder:
-            logger.warning(f"[ART PLACEHOLDER] Detected Volumio default artwork ({reason}) sha256={sha256}")
-        else:
-            logger.debug(f"[ART PLACEHOLDER] Not placeholder sha256={sha256}")
-
-        # Extract dominant color before resizing for display
-        accent = self._get_dominant_color(art)
-        logger.debug(f"[ART FETCH] Dominant color: RGB{accent}")
-
-        # Resize for display
-        art_resized = art.resize((self.art_size, self.art_size), Image.Resampling.LANCZOS)
+        art_resized = artwork_image.resize((self.art_size, self.art_size), Image.Resampling.LANCZOS)
         return art_resized, accent
 
-    def _get_cached_art(self, art_url):
-        """Fetches and resizes the cover art, with caching and dominant color extraction."""
-        if art_url in self.art_cache:
-            logger.debug(f"[ART CACHE HIT] URL: {art_url}")
-            return self.art_cache[art_url]
+    def _get_cached_art(self, cache_key, artwork_image, source="unknown"):
+        """Cache resized artwork and accent color using a media-player-provided key."""
+        if not cache_key or artwork_image is None:
+            return None
 
-        logger.info(f"[ART FETCH] URL: {art_url}")
+        if cache_key in self.art_cache:
+            return self.art_cache[cache_key]
+
         try:
             if len(self.art_cache) > 10:
-                logger.debug(f"[ART CACHE] Clearing cache (size: {len(self.art_cache)})")
                 self.art_cache.clear()
-            art_resized, accent = self._fetch_artwork_on_cache_miss(art_url)
+                self.art_cache_meta.clear()
+            art_resized, accent = self._prepare_artwork_on_cache_miss(artwork_image)
             
-            self.art_cache[art_url] = (art_resized, accent)
-            logger.info(f"[ART SUCCESS] Cached and resized: {art_url}")
+            self.art_cache[cache_key] = (art_resized, accent)
+            self.art_cache_meta[cache_key] = {"source": source}
             return art_resized, accent
         except Exception as e:
-            logger.warning(f"[ART ERROR] Failed to load artwork from {art_url}: {type(e).__name__}: {e}")
+            logger.warning(f"[ART ERROR] Failed to prepare artwork {cache_key}: {type(e).__name__}: {e}")
             return None

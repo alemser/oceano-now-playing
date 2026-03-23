@@ -12,6 +12,23 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 
+def _parse_bool_env(var_name: str, default: bool) -> bool:
+    """Parse a boolean environment variable using common true/false values."""
+    value = os.getenv(var_name)
+    if value is None:
+        return default
+
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+
+    raise ValueError(
+        f"Invalid {var_name} environment variable: expected true/false, got '{value}'"
+    )
+
+
 @dataclass
 class Config:
     """Application settings with environment variable overrides and validation.
@@ -32,6 +49,7 @@ class Config:
     volumio_url: str = "ws://localhost:3000/socket.io/?EIO=3&transport=websocket"
     moode_url: str = "http://localhost/engine-mpd.php"
     lms_url: str = "ws://localhost:9000"
+    external_artwork_enabled: bool = True
 
     # Timing (seconds)
     mode_cycle_time: int = 30  # seconds between text/artwork modes
@@ -51,10 +69,12 @@ class Config:
         - VOLUMIO_URL: WebSocket URL for Volumio
         - MOODE_URL: HTTP polling endpoint for MoOde (e.g., http://localhost/engine-mpd.php)
         - LMS_URL: WebSocket URL for piCorePlayer/LMS
+        - EXTERNAL_ARTWORK_ENABLED: enable external artwork fallback lookups (default: true)
+        - CYCLE_TIME: text/artwork mode cycle in seconds (default: 30)
         - STANDBY_TIMEOUT: display sleep timeout in seconds (default: 600)
         
         Raises:
-            ValueError: If STANDBY_TIMEOUT cannot be parsed as an integer.
+            ValueError: If CYCLE_TIME or STANDBY_TIMEOUT cannot be parsed as an integer.
         """
         # Load environment overrides
         self.framebuffer_device = os.getenv(
@@ -67,14 +87,20 @@ class Config:
         self.volumio_url = os.getenv("VOLUMIO_URL", self.volumio_url)
         self.moode_url = os.getenv("MOODE_URL", self.moode_url)
         self.lms_url = os.getenv("LMS_URL", self.lms_url)
+        self.external_artwork_enabled = _parse_bool_env(
+            "EXTERNAL_ARTWORK_ENABLED",
+            self.external_artwork_enabled,
+        )
 
         # Parse integer environment variables with validation
         try:
+            if "CYCLE_TIME" in os.environ:
+                self.mode_cycle_time = int(os.environ["CYCLE_TIME"])
             if "STANDBY_TIMEOUT" in os.environ:
                 self.standby_timeout = int(os.environ["STANDBY_TIMEOUT"])
         except ValueError as e:
             raise ValueError(
-                f"Invalid STANDBY_TIMEOUT environment variable: {e}"
+                f"Invalid CYCLE_TIME or STANDBY_TIMEOUT environment variable: {e}"
             )
 
     def validate(self) -> None:
@@ -129,7 +155,8 @@ class Config:
         logger.info(
             f"Media Player: {self.media_player_type.upper()}, "
             f"standby_timeout={self.standby_timeout}s, "
-            f"mode_cycle_time={self.mode_cycle_time}s"
+            f"mode_cycle_time={self.mode_cycle_time}s, "
+            f"external_artwork={'on' if self.external_artwork_enabled else 'off'}"
         )
         if self.media_player_type == "volumio":
             logger.info(f"Volumio URL: {self.volumio_url}")

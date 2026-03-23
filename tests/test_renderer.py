@@ -175,6 +175,30 @@ class TestArtCaching:
         renderer.clear_art_cache()
         assert len(renderer.art_cache) == 0
 
+    def test_placeholder_without_fallback_is_not_cached(self, mock_renderer):
+        """Test that missing resolved artwork is not cached."""
+        renderer = mock_renderer
+        cache_key = 'fallback:Bob Marley & The Wailers|Exodus'
+        result = renderer._get_cached_art(cache_key, None, source='fallback')
+
+        assert result is None
+        assert cache_key not in renderer.art_cache
+        assert cache_key not in renderer.art_cache_meta
+
+    def test_fallback_artwork_is_cached_with_metadata(self, mock_renderer):
+        """Test that fallback artwork is cached and source metadata is tracked."""
+        renderer = mock_renderer
+        cache_key = 'fallback:Bob Marley & The Wailers|Exodus'
+        test_img = Image.new('RGB', (320, 320), color=(120, 120, 120))
+        accent = (120, 120, 120)
+
+        with patch.object(renderer, '_prepare_artwork_on_cache_miss', return_value=(test_img, accent)):
+            result = renderer._get_cached_art(cache_key, test_img, source='fallback')
+
+        assert result == (test_img, accent)
+        assert renderer.art_cache[cache_key] == (test_img, accent)
+        assert renderer.art_cache_meta[cache_key]['source'] == 'fallback'
+
 
 class TestColorConversion:
     """Test RGB888 to RGB565 color conversion."""
@@ -235,6 +259,33 @@ class TestImageResizing:
         # Resize should not crash
         resized = img.resize((320, 320), Image.Resampling.LANCZOS)
         assert resized.size == (320, 320)
+
+
+class TestMissingArtworkRendering:
+    """Test rendering when artwork is unavailable."""
+
+    def test_artwork_mode_renders_placeholder_card_when_art_missing(self, mock_renderer):
+        """Artwork mode should render a built-in placeholder instead of a blank screen."""
+        renderer = mock_renderer
+        rendered_images = []
+
+        with patch.object(renderer, '_write_to_fb', side_effect=lambda img: rendered_images.append(img.copy())):
+            renderer.render(
+                {
+                    'title': 'Exodus',
+                    'artist': 'Bob Marley & The Wailers',
+                    'album': 'Exodus',
+                    'albumart': '',
+                    'status': 'play',
+                    'seek': 30000,
+                    'duration': 180000,
+                },
+                show_capa_mode=True,
+            )
+
+        assert rendered_images
+        center_pixel = rendered_images[-1].getpixel((renderer.width // 2, renderer.height // 2 - 10))
+        assert center_pixel != (0, 0, 0)
 
 
 class TestFontHandling:
