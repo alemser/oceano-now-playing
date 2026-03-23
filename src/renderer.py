@@ -224,8 +224,6 @@ class Renderer:
         albumart = data.get('albumart', '')
         status = data.get('status', 'stop')
         
-        logger.info(f"[RENDER] Title: {title}, Artist: {artist}, Album: {album}, Status: {status}, Albumart: {albumart}")
-        
         # Progress Calculation
         seek = data.get('seek', 0) or 0
         if seek is None:
