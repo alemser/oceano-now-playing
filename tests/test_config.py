@@ -15,7 +15,7 @@ from config import Config
 def clean_env():
     """Remove config-related env vars between tests."""
     config_vars = [
-        'FB_DEVICE', 'COLOR_FORMAT', 'MEDIA_PLAYER',
+        'FB_DEVICE', 'COLOR_FORMAT', 'LAYOUT_PROFILE', 'MEDIA_PLAYER',
         'VOLUMIO_URL', 'MOODE_URL', 'LMS_URL', 'CYCLE_TIME', 'STANDBY_TIMEOUT',
         'EXTERNAL_ARTWORK_ENABLED'
     ]
@@ -39,6 +39,7 @@ def test_config_defaults():
     assert cfg.display_height == 320
     assert cfg.framebuffer_device == "/dev/fb0"
     assert cfg.color_format == "RGB565"
+    assert cfg.layout_profile == "high_contrast"
     assert cfg.media_player_type == "auto"
     assert cfg.external_artwork_enabled is True
     assert cfg.mode_cycle_time == 30
@@ -57,6 +58,21 @@ def test_config_env_COLOR_FORMAT(monkeypatch):
     monkeypatch.setenv("COLOR_FORMAT", "BGR565")
     cfg = Config()
     assert cfg.color_format == "BGR565"
+
+
+def test_config_env_LAYOUT_PROFILE(monkeypatch):
+    """Config loads LAYOUT_PROFILE from environment."""
+    monkeypatch.setenv("LAYOUT_PROFILE", "classic")
+    cfg = Config()
+    assert cfg.layout_profile == "classic"
+
+
+def test_config_validate_invalid_layout_profile():
+    """Config.validate() rejects unsupported layout profiles."""
+    cfg = Config()
+    cfg.layout_profile = "retro"
+    with pytest.raises(ValueError, match="layout_profile must be one of"):
+        cfg.validate()
 
 
 def test_config_env_MEDIA_PLAYER(monkeypatch):

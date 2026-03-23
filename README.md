@@ -66,6 +66,7 @@ You can customize the behavior in `src/config.py` or by setting environment vari
 | --- | --- | --- |
 | `FB_DEVICE` | `/dev/fb0` | Environment variable or edit `Config.framebuffer_device` |
 | `COLOR_FORMAT` | `RGB565` | Environment variable or edit `Config.color_format` |
+| `LAYOUT_PROFILE` | `high_contrast` | Environment variable or edit `Config.layout_profile` (`high_contrast` or `classic`) |
 | `MEDIA_PLAYER` | `auto` | Environment variable or edit `Config.media_player_type` |
 | `VOLUMIO_URL` | `ws://localhost:3000/socket.io/?EIO=3&transport=websocket` | Environment variable or edit `Config.volumio_url` |
 | `MOODE_URL` | `http://localhost/engine-mpd.php` | Environment variable or edit `Config.moode_url` |
@@ -80,11 +81,13 @@ Notes:
 - `EXTERNAL_ARTWORK_ENABLED=true` allows fallback artwork lookup from external services when Volumio only returns its placeholder image.
 - `EXTERNAL_ARTWORK_ENABLED=false` keeps Volumio's own artwork behavior intact, including its default placeholder when nothing better is available.
 - `COLOR_FORMAT=BGR565` is useful if red and blue look swapped on your panel.
+- `LAYOUT_PROFILE=high_contrast` is optimized for lower-quality/off-angle resistive panels; `classic` keeps the previous visual style.
 
 To change these via the service, edit `/etc/systemd/system/spi-now-playing.service` and add entries under `[Service]`, for example:
 
 ```ini
 Environment="MEDIA_PLAYER=volumio"
+Environment="LAYOUT_PROFILE=high_contrast"
 Environment="CYCLE_TIME=45"
 Environment="STANDBY_TIMEOUT=900"
 Environment="EXTERNAL_ARTWORK_ENABLED=false"

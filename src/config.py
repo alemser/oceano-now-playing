@@ -43,6 +43,7 @@ class Config:
     display_height: int = 320
     framebuffer_device: str = "/dev/fb0"
     color_format: str = "RGB565"
+    layout_profile: str = "high_contrast"
 
     # Media player
     media_player_type: str = "auto"
@@ -65,6 +66,7 @@ class Config:
         Environment variables (with defaults):
         - FB_DEVICE: framebuffer device path (default: /dev/fb0)
         - COLOR_FORMAT: RGB565 or BGR565 (default: RGB565)
+        - LAYOUT_PROFILE: renderer layout profile (classic or high_contrast)
         - MEDIA_PLAYER: auto, volumio, moode, or picore (default: auto)
         - VOLUMIO_URL: WebSocket URL for Volumio
         - MOODE_URL: HTTP polling endpoint for MoOde (e.g., http://localhost/engine-mpd.php)
@@ -81,6 +83,7 @@ class Config:
             "FB_DEVICE", self.framebuffer_device
         )
         self.color_format = os.getenv("COLOR_FORMAT", self.color_format)
+        self.layout_profile = os.getenv("LAYOUT_PROFILE", self.layout_profile).lower()
         self.media_player_type = os.getenv(
             "MEDIA_PLAYER", self.media_player_type
         ).lower()
@@ -142,6 +145,14 @@ class Config:
                 f"got '{self.color_format}'"
             )
 
+        # Renderer layout profile
+        valid_layout_profiles = ("classic", "high_contrast")
+        if self.layout_profile not in valid_layout_profiles:
+            raise ValueError(
+                f"layout_profile must be one of {valid_layout_profiles}, "
+                f"got '{self.layout_profile}'"
+            )
+
         # Framebuffer device
         if not self.framebuffer_device:
             raise ValueError("framebuffer_device cannot be empty")
@@ -150,7 +161,8 @@ class Config:
         """Log the current configuration at INFO level."""
         logger.info(
             f"Display: {self.display_width}x{self.display_height}, "
-            f"format={self.color_format}, device={self.framebuffer_device}"
+            f"format={self.color_format}, device={self.framebuffer_device}, "
+            f"layout={self.layout_profile}"
         )
         logger.info(
             f"Media Player: {self.media_player_type.upper()}, "
