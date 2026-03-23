@@ -7,11 +7,17 @@ from io import BytesIO
 import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageStat
+from artwork_providers import ArtworkLookup
 
 logger = logging.getLogger(__name__)
 
-# Known Volumio placeholder image hash (/volumio/app/plugins/miscellanea/albumart/default.png)
-VOLUMIO_PLACEHOLDER_SHA256 = "c9c0eb5de9ba0d540f0784f2de757a18ef095005032e97fd559ce74430167db1"
+# Known Volumio placeholder hashes.
+# 1) Exact file hash from /volumio/app/plugins/miscellanea/albumart/default.png
+# 2) Hash observed from /albumart endpoint when placeholder is re-served/transformed
+VOLUMIO_PLACEHOLDER_SHA256_HASHES = {
+    "d38e8d8533672451d5a3572c0c8c7d4e89218277116bc24afe33af545597ec85",
+}
+VOLUMIO_DEFAULT_PLACEHOLDER_PATH = "/volumio/app/plugins/miscellanea/albumart/default.png"
 
 class Renderer:
     def __init__(self, width=480, height=320, fb_device="/dev/fb0", color_format="RGB565", volumio_host="localhost"):
@@ -28,6 +34,8 @@ class Renderer:
         # Default accent color (Volumio green)
         self.default_accent = (60, 180, 60)
         self.placeholder_dhash = os.getenv("VOLUMIO_PLACEHOLDER_DHASH", "").lower()
+        if not self.placeholder_dhash:
+            self.placeholder_dhash = self._load_default_placeholder_dhash()
         
         # Try to open the framebuffer once
         self._open_fb()
@@ -137,6 +145,20 @@ class Renderer:
         bits = ''.join('1' if v else '0' for v in diff.flatten())
         return f"{int(bits, 2):0{hash_size * hash_size // 4}x}"
 
+    def _load_default_placeholder_dhash(self):
+        """Load dHash from Volumio's bundled default artwork when available."""
+        try:
+            if not os.path.exists(VOLUMIO_DEFAULT_PLACEHOLDER_PATH):
+                return ""
+            with open(VOLUMIO_DEFAULT_PLACEHOLDER_PATH, "rb") as f:
+                default_img = Image.open(BytesIO(f.read())).convert("RGB")
+            dhash = self._compute_dhash(default_img)
+            logger.info(f"[ART PLACEHOLDER] Loaded default placeholder dHash: {dhash}")
+            return dhash
+        except Exception as e:
+            logger.debug(f"[ART PLACEHOLDER] Could not load default placeholder dHash: {e}")
+            return ""
+
     def _hamming_distance(self, hex_a, hex_b):
         """Compute Hamming distance between two equal-length hex strings."""
         if len(hex_a) != len(hex_b):
@@ -146,7 +168,7 @@ class Renderer:
     def _is_volumio_placeholder_image(self, image_bytes, image):
         """Detect Volumio default placeholder via exact hash or optional perceptual hash."""
         sha256 = hashlib.sha256(image_bytes).hexdigest()
-        if sha256 == VOLUMIO_PLACEHOLDER_SHA256:
+        if sha256 in VOLUMIO_PLACEHOLDER_SHA256_HASHES:
             return True, "exact-sha256-match", sha256
 
         # Optional perceptual fallback: enable by setting VOLUMIO_PLACEHOLDER_DHASH env var.
@@ -283,7 +305,7 @@ class Renderer:
         art = None
         if albumart:
             logger.debug(f"[RENDER] Fetching artwork: {albumart}")
-            art_data = self._get_cached_art(albumart)
+            art_data = self._get_cached_art(albumart, artist=artist, album=album)
             if art_data:
                 art, accent_color = art_data
                 logger.info(f"[RENDER] Artwork loaded successfully")
@@ -341,7 +363,7 @@ class Renderer:
         """Clears the album art cache."""
         self.art_cache.clear()
 
-    def _fetch_artwork_on_cache_miss(self, art_url):
+    def _fetch_artwork_on_cache_miss(self, art_url, artist="", album=""):
         """Retrieve and process artwork for cache misses.
 
         This function performs network fetch, image decode, dominant color
@@ -358,43 +380,50 @@ class Renderer:
         else:
             url = art_url
 
-        logger.debug(f"[ART FETCH] Full URL: {url}")
+        logger.info(f"[ART FETCH] Full URL: {url}")
         res = requests.get(url, timeout=3)
-        logger.debug(
+        logger.info(
             f"[ART FETCH] Status: {res.status_code}, Size: {len(res.content)} bytes, "
             f"Content-Type: {res.headers.get('content-type', 'unknown')}"
         )
 
         art_bytes = res.content
         art = Image.open(BytesIO(art_bytes)).convert("RGB")
-        logger.debug(f"[ART FETCH] Image format: {art.format}, Size: {art.size}, Mode: {art.mode}")
+        logger.info(f"[ART FETCH] Image format: {art.format}, Size: {art.size}, Mode: {art.mode}")
 
         is_placeholder, reason, sha256 = self._is_volumio_placeholder_image(art_bytes, art)
         if is_placeholder:
             logger.warning(f"[ART PLACEHOLDER] Detected Volumio default artwork ({reason}) sha256={sha256}")
+            fallback_art = ArtworkLookup.get_artwork(artist, album, timeout=3.0)
+            if fallback_art:
+                logger.info(f"[ART FALLBACK] Using Cover Art Archive for {artist} - {album}")
+                fallback_accent = self._get_dominant_color(fallback_art)
+                fallback_resized = fallback_art.resize((self.art_size, self.art_size), Image.Resampling.LANCZOS)
+                return fallback_resized, fallback_accent
+            logger.warning(f"[ART FALLBACK] No fallback artwork for {artist} - {album}")
         else:
-            logger.debug(f"[ART PLACEHOLDER] Not placeholder sha256={sha256}")
+            logger.info(f"[ART PLACEHOLDER] Not placeholder sha256={sha256}")
 
         # Extract dominant color before resizing for display
         accent = self._get_dominant_color(art)
-        logger.debug(f"[ART FETCH] Dominant color: RGB{accent}")
+        logger.info(f"[ART FETCH] Dominant color: RGB{accent}")
 
         # Resize for display
         art_resized = art.resize((self.art_size, self.art_size), Image.Resampling.LANCZOS)
         return art_resized, accent
 
-    def _get_cached_art(self, art_url):
+    def _get_cached_art(self, art_url, artist="", album=""):
         """Fetches and resizes the cover art, with caching and dominant color extraction."""
         if art_url in self.art_cache:
-            logger.debug(f"[ART CACHE HIT] URL: {art_url}")
+            logger.info(f"[ART CACHE HIT] URL: {art_url}")
             return self.art_cache[art_url]
 
         logger.info(f"[ART FETCH] URL: {art_url}")
         try:
             if len(self.art_cache) > 10:
-                logger.debug(f"[ART CACHE] Clearing cache (size: {len(self.art_cache)})")
+                logger.info(f"[ART CACHE] Clearing cache (size: {len(self.art_cache)})")
                 self.art_cache.clear()
-            art_resized, accent = self._fetch_artwork_on_cache_miss(art_url)
+            art_resized, accent = self._fetch_artwork_on_cache_miss(art_url, artist=artist, album=album)
             
             self.art_cache[art_url] = (art_resized, accent)
             logger.info(f"[ART SUCCESS] Cached and resized: {art_url}")
