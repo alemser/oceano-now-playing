@@ -28,6 +28,7 @@ try:
     spec.loader.exec_module(spi_module)
     states_are_equal = spi_module.states_are_equal
     should_resolve_artwork = spi_module.should_resolve_artwork
+    artwork_identity_changed = spi_module.artwork_identity_changed
     ARTWORK_RETRY_INTERVAL_SECONDS = spi_module.ARTWORK_RETRY_INTERVAL_SECONDS
 except Exception as e:
     # Fallback: define a simple version for testing if import fails
@@ -49,17 +50,25 @@ except Exception as e:
         previous_artwork_resolve_time,
         now,
     ):
-        if is_new_song or artwork_changed:
+        if is_new_song:
             return True
         if previous_resolved_artwork is None:
             if previous_artwork_resolve_time is None:
                 return True
             return (now - previous_artwork_resolve_time) >= 60.0
-        if previous_resolved_artwork.get('source') == 'volumio-placeholder':
-            if previous_artwork_resolve_time is None:
-                return True
-            return (now - previous_artwork_resolve_time) >= 60.0
+        if previous_resolved_artwork.get('source') == 'fallback':
+            return False
         return False
+
+    def artwork_identity_changed(current_state, previous_state):
+        if current_state is None:
+            return False
+        if previous_state is None:
+            return True
+        return (
+            (current_state.get('artist') or '') != (previous_state.get('artist') or '')
+            or (current_state.get('album') or '') != (previous_state.get('album') or '')
+        )
 
     ARTWORK_RETRY_INTERVAL_SECONDS = 60.0
 
@@ -356,15 +365,15 @@ class TestArtworkResolvePolicy:
             now=130.0,
         ) is True
 
-    def test_resolve_on_artwork_changed(self):
-        """Always resolve artwork when albumart URL changes."""
+    def test_no_resolve_on_artwork_changed_only(self):
+        """Albumart URL changes alone should not trigger provider re-resolution."""
         assert should_resolve_artwork(
             is_new_song=False,
             artwork_changed=True,
             previous_resolved_artwork={'source': 'volumio'},
             previous_artwork_resolve_time=123.0,
             now=130.0,
-        ) is True
+        ) is False
 
     def test_no_retry_before_backoff_for_missing_artwork(self):
         """Missing artwork should not be retried before backoff interval."""
@@ -377,8 +386,8 @@ class TestArtworkResolvePolicy:
             now=now,
         ) is False
 
-    def test_retry_after_backoff_for_placeholder_artwork(self):
-        """Placeholder artwork should be retried after backoff interval."""
+    def test_no_retry_for_legacy_placeholder_artwork(self):
+        """Legacy volumio-placeholder source should not trigger retries anymore."""
         now = 1000.0
         assert should_resolve_artwork(
             is_new_song=False,
@@ -386,7 +395,18 @@ class TestArtworkResolvePolicy:
             previous_resolved_artwork={'source': 'volumio-placeholder'},
             previous_artwork_resolve_time=now - ARTWORK_RETRY_INTERVAL_SECONDS,
             now=now,
-        ) is True
+        ) is False
+
+    def test_no_retry_for_fallback_artwork(self):
+        """Fallback artwork should be reused until song/artwork changes."""
+        now = 1000.0
+        assert should_resolve_artwork(
+            is_new_song=False,
+            artwork_changed=False,
+            previous_resolved_artwork={'source': 'fallback'},
+            previous_artwork_resolve_time=now - ARTWORK_RETRY_INTERVAL_SECONDS,
+            now=now,
+        ) is False
 
     def test_no_retry_for_good_resolved_artwork(self):
         """Resolved non-placeholder artwork should be reused."""
@@ -398,3 +418,25 @@ class TestArtworkResolvePolicy:
             previous_artwork_resolve_time=now - 1000.0,
             now=now,
         ) is False
+
+
+class TestArtworkIdentityChanged:
+    """Test artist/album identity checks used for artwork refresh."""
+
+    def test_true_when_previous_state_missing(self):
+        assert artwork_identity_changed({'artist': 'A', 'album': 'X'}, None) is True
+
+    def test_true_when_artist_changes(self):
+        previous = {'artist': 'A', 'album': 'X'}
+        current = {'artist': 'B', 'album': 'X'}
+        assert artwork_identity_changed(current, previous) is True
+
+    def test_true_when_album_changes(self):
+        previous = {'artist': 'A', 'album': 'X'}
+        current = {'artist': 'A', 'album': 'Y'}
+        assert artwork_identity_changed(current, previous) is True
+
+    def test_false_when_artist_and_album_unchanged(self):
+        previous = {'artist': 'A', 'album': 'X', 'title': 'Song 1'}
+        current = {'artist': 'A', 'album': 'X', 'title': 'Song 2'}
+        assert artwork_identity_changed(current, previous) is False

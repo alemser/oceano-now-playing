@@ -11,7 +11,12 @@ from PIL import Image
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from artwork.providers import ArtworkLookup, CoverArtArchive
+from artwork.providers import (
+    ArtworkLookup,
+    CoverArtArchive,
+    ITunesArtworkProvider,
+    DeezerArtworkProvider,
+)
 
 
 def _fake_image_bytes(color=(255, 0, 0)):
@@ -61,20 +66,19 @@ class TestCoverArtArchive:
         assert 'release:"Exodus (2013 Remaster)"' in first_query
         assert 'release:"Exodus"' in second_query
 
+    @patch('artwork.providers.CoverArtArchive._search_releases')
     @patch('artwork.providers.requests.get')
-    def test_fetch_artwork_falls_back_to_release_group_front(self, mock_get):
+    def test_fetch_artwork_falls_back_to_release_group_front(self, mock_get, mock_search):
         """Artwork fetch should try release-group front URL if release URLs 404."""
-        search_response = MagicMock()
-        search_response.raise_for_status.return_value = None
-        search_response.json.return_value = {
-            'releases': [
-                {
-                    'id': 'release-123',
-                    'title': 'Exodus',
-                    'release-group': {'id': 'group-456'},
-                }
-            ]
-        }
+        mock_search.return_value = [
+            {
+                'release_id': 'release-123',
+                'release_group_id': 'group-456',
+                'title': 'Exodus',
+                'artist': 'Bob Marley & The Wailers',
+                'score': 0.95,
+            }
+        ]
 
         not_found_response = MagicMock(status_code=404)
         not_found_error = requests.HTTPError('404 not found', response=not_found_response)
@@ -90,7 +94,6 @@ class TestCoverArtArchive:
         group_front_response.content = _fake_image_bytes()
 
         mock_get.side_effect = [
-            search_response,
             release_front_response,
             release_front_250_response,
             group_front_response,
@@ -137,21 +140,20 @@ class TestCoverArtArchive:
 
         assert image is None
 
+    @patch('artwork.providers.CoverArtArchive._search_releases')
     @patch('artwork.providers.Image.open')
     @patch('artwork.providers.requests.get')
-    def test_fetch_artwork_decode_error_continues_to_next_candidate(self, mock_get, mock_image_open):
+    def test_fetch_artwork_decode_error_continues_to_next_candidate(self, mock_get, mock_image_open, mock_search):
         """Decode errors should continue trying candidate URLs instead of aborting."""
-        search_response = MagicMock()
-        search_response.raise_for_status.return_value = None
-        search_response.json.return_value = {
-            'releases': [
-                {
-                    'id': 'release-123',
-                    'title': 'Exodus',
-                    'release-group': {'id': 'group-456'},
-                }
-            ]
-        }
+        mock_search.return_value = [
+            {
+                'release_id': 'release-123',
+                'release_group_id': 'group-456',
+                'title': 'Exodus',
+                'artist': 'Bob Marley & The Wailers',
+                'score': 0.95,
+            }
+        ]
 
         image_response_1 = MagicMock()
         image_response_1.raise_for_status.return_value = None
@@ -161,10 +163,14 @@ class TestCoverArtArchive:
         image_response_2.raise_for_status.return_value = None
         image_response_2.content = _fake_image_bytes(color=(10, 20, 30))
 
+        image_response_3 = MagicMock()
+        image_response_3.raise_for_status.return_value = None
+        image_response_3.content = _fake_image_bytes(color=(10, 20, 30))
+
         mock_get.side_effect = [
-            search_response,
             image_response_1,
             image_response_2,
+            image_response_3,
         ]
 
         decode_error = OSError('cannot identify image file')
@@ -218,10 +224,14 @@ class TestArtworkLookup:
         assert call_count_2 == 1
         assert art1 is art2
 
+    @patch('artwork.providers.DeezerArtworkProvider.fetch_artwork')
+    @patch('artwork.providers.ITunesArtworkProvider.fetch_artwork')
     @patch('artwork.providers.CoverArtArchive.fetch_artwork')
-    def test_get_artwork_not_found_caching(self, mock_fetch):
+    def test_get_artwork_not_found_caching(self, mock_fetch, mock_itunes, mock_deezer):
         """Cache negative results to avoid repeated lookups."""
         mock_fetch.return_value = None
+        mock_itunes.return_value = None
+        mock_deezer.return_value = None
 
         art1 = ArtworkLookup.get_artwork('Unknown', 'Album', timeout=3.0)
         call_count_1 = mock_fetch.call_count
@@ -233,6 +243,66 @@ class TestArtworkLookup:
         assert art2 is None
         assert call_count_1 == 1
         assert call_count_2 == 1
+
+    @patch('artwork.providers.DeezerArtworkProvider.fetch_artwork')
+    @patch('artwork.providers.ITunesArtworkProvider.fetch_artwork')
+    @patch('artwork.providers.CoverArtArchive.fetch_artwork')
+    def test_provider_chain_uses_itunes_when_caa_fails(self, mock_caa, mock_itunes, mock_deezer):
+        """Artwork lookup should use iTunes when Cover Art Archive has no match."""
+        mock_caa.return_value = None
+        itunes_image = Image.new('RGB', (300, 300), color='purple')
+        mock_itunes.return_value = itunes_image
+        mock_deezer.return_value = None
+
+        art = ArtworkLookup.get_artwork('Bob Marley', 'Exodus', timeout=3.0)
+
+        assert art is itunes_image
+        mock_caa.assert_called_once()
+        mock_itunes.assert_called_once()
+        mock_deezer.assert_not_called()
+
+    @patch('artwork.providers.DeezerArtworkProvider.fetch_artwork')
+    @patch('artwork.providers.ITunesArtworkProvider.fetch_artwork')
+    @patch('artwork.providers.CoverArtArchive.fetch_artwork')
+    def test_provider_chain_uses_deezer_as_last_resort(self, mock_caa, mock_itunes, mock_deezer):
+        """Artwork lookup should fall through to Deezer when prior providers miss."""
+        mock_caa.return_value = None
+        mock_itunes.return_value = None
+        deezer_image = Image.new('RGB', (300, 300), color='orange')
+        mock_deezer.return_value = deezer_image
+
+        art = ArtworkLookup.get_artwork('Sade', 'Love Deluxe', timeout=3.0)
+
+        assert art is deezer_image
+        mock_caa.assert_called_once()
+        mock_itunes.assert_called_once()
+        mock_deezer.assert_called_once()
+
+    @patch('artwork.providers.time.monotonic')
+    @patch('artwork.providers.DeezerArtworkProvider.fetch_artwork')
+    @patch('artwork.providers.ITunesArtworkProvider.fetch_artwork')
+    @patch('artwork.providers.CoverArtArchive.fetch_artwork')
+    def test_provider_chain_stops_when_hard_timeout_budget_exhausted(
+        self,
+        mock_caa,
+        mock_itunes,
+        mock_deezer,
+        mock_monotonic,
+    ):
+        """Lookup should stop after budget expires instead of trying all providers."""
+        mock_caa.return_value = None
+        mock_itunes.return_value = None
+        mock_deezer.return_value = None
+
+        # deadline = 100.0 + 1.0; after first provider, time has advanced past deadline
+        mock_monotonic.side_effect = [100.0, 100.2, 101.1]
+
+        art = ArtworkLookup.get_artwork('Artist', 'Album', timeout=1.0)
+
+        assert art is None
+        mock_caa.assert_called_once()
+        mock_itunes.assert_not_called()
+        mock_deezer.assert_not_called()
 
     def test_clear_cache(self):
         """Clear cache method works."""
@@ -258,3 +328,19 @@ class TestArtworkLookup:
         assert len(ArtworkLookup._cache) < 10
 
         ArtworkLookup.MAX_CACHE_SIZE = original_size
+
+
+class TestProviderScoring:
+    """Test provider score thresholds and confidence behavior."""
+
+    def test_cover_art_archive_min_score_is_reasonable(self):
+        """CAA threshold should be configured for strict-enough matching."""
+        assert 0.5 <= CoverArtArchive.MIN_MATCH_SCORE <= 0.8
+
+    def test_itunes_min_score_is_reasonable(self):
+        """iTunes threshold should be configured for strict-enough matching."""
+        assert 0.5 <= ITunesArtworkProvider.MIN_MATCH_SCORE <= 0.8
+
+    def test_deezer_min_score_is_reasonable(self):
+        """Deezer threshold should be configured for strict-enough matching."""
+        assert 0.5 <= DeezerArtworkProvider.MIN_MATCH_SCORE <= 0.8

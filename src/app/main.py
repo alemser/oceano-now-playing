@@ -28,7 +28,8 @@ last_seek_timestamp = 0
 last_known_seek = 0
 is_sleeping = False
 is_showing_idle = False
-ARTWORK_RETRY_INTERVAL_SECONDS = 60.0
+ARTWORK_RETRY_INTERVAL_SECONDS = 15.0
+ARTWORK_RESOLVE_TIMEOUT_SECONDS = 2.5
 
 # Global objects
 config = None
@@ -160,8 +161,14 @@ def should_resolve_artwork(
     previous_artwork_resolve_time: float | None,
     now: float,
 ) -> bool:
-    """Decide whether to resolve artwork again for the current state update."""
-    if is_new_song or artwork_changed:
+    """Decide whether to resolve artwork again for the current state update.
+
+    Notes:
+        artwork_changed is intentionally ignored in provider-only mode because
+        Volumio's raw albumart field can fluctuate while track metadata stays
+        the same, which would otherwise cause redundant fallback lookups.
+    """
+    if is_new_song:
         return True
 
     if previous_resolved_artwork is None:
@@ -169,12 +176,23 @@ def should_resolve_artwork(
             return True
         return (now - previous_artwork_resolve_time) >= ARTWORK_RETRY_INTERVAL_SECONDS
 
-    if previous_resolved_artwork.get('source') == 'volumio-placeholder':
-        if previous_artwork_resolve_time is None:
-            return True
-        return (now - previous_artwork_resolve_time) >= ARTWORK_RETRY_INTERVAL_SECONDS
+    if previous_resolved_artwork.get('source') == 'fallback':
+        return False
 
     return False
+
+
+def artwork_identity_changed(current_state: dict | None, previous_state: dict | None) -> bool:
+    """Return True when artist/album pair changed and artwork should refresh."""
+    if current_state is None:
+        return False
+    if previous_state is None:
+        return True
+
+    return (
+        (current_state.get('artist') or "") != (previous_state.get('artist') or "")
+        or (current_state.get('album') or "") != (previous_state.get('album') or "")
+    )
 
 
 def states_are_equal(s1, s2):
@@ -279,13 +297,11 @@ def main():
 
                 if new_data:
                     is_new_song = False
-                    artwork_changed = False
+                    artwork_identity_is_new = artwork_identity_changed(new_data, last_state)
                     if not last_state:
                         is_new_song = True
                     elif new_data.get('title') != last_state.get('title') or new_data.get('artist') != last_state.get('artist'):
                         is_new_song = True
-                    if last_state and new_data.get('albumart') != last_state.get('albumart'):
-                        artwork_changed = True
 
                     previous_resolved_artwork = last_state.get('_resolved_artwork') if last_state else None
                     previous_artwork_resolve_time = (
@@ -293,13 +309,16 @@ def main():
                     )
 
                     if should_resolve_artwork(
-                        is_new_song=is_new_song,
-                        artwork_changed=artwork_changed,
+                        is_new_song=artwork_identity_is_new,
+                        artwork_changed=False,
                         previous_resolved_artwork=previous_resolved_artwork,
                         previous_artwork_resolve_time=previous_artwork_resolve_time,
                         now=now,
                     ):
-                        new_data['_resolved_artwork'] = player.resolve_artwork(new_data)
+                        new_data['_resolved_artwork'] = player.resolve_artwork(
+                            new_data,
+                            timeout=ARTWORK_RESOLVE_TIMEOUT_SECONDS,
+                        )
                         new_data['_artwork_resolve_time'] = now
                     else:
                         new_data['_resolved_artwork'] = previous_resolved_artwork
@@ -317,9 +336,11 @@ def main():
                     if last_known_seek is None:
                         last_known_seek = 0
                     last_seek_timestamp = now
-                    last_active_time = now
+                    status = new_data.get('status')
+                    if status == 'play':
+                        last_active_time = now
 
-                    if is_sleeping or is_showing_idle:
+                    if status == 'play' and (is_sleeping or is_showing_idle):
                         logger.info("Activity detected, waking up display...")
                         is_sleeping = False
                         is_showing_idle = False

@@ -5,6 +5,7 @@ from app.main import (
     detect_media_player,
     states_are_equal,
     should_resolve_artwork,
+    artwork_identity_changed,
 )
 
 __all__ = [
@@ -12,6 +13,7 @@ __all__ = [
     "detect_media_player",
     "states_are_equal",
     "should_resolve_artwork",
+    "artwork_identity_changed",
 ]
 
 

@@ -78,8 +78,8 @@ You can customize the behavior in `src/config.py` or by setting environment vari
 Notes:
 
 - `MEDIA_PLAYER=auto` tries to detect the active backend automatically.
-- `EXTERNAL_ARTWORK_ENABLED=true` allows fallback artwork lookup from external services when Volumio only returns its placeholder image.
-- `EXTERNAL_ARTWORK_ENABLED=false` keeps Volumio's own artwork behavior intact, including its default placeholder when nothing better is available.
+- `EXTERNAL_ARTWORK_ENABLED=true` enables artwork lookup from external providers (Cover Art Archive, iTunes, Deezer) using artist + album metadata.
+- `EXTERNAL_ARTWORK_ENABLED=false` disables external lookup; if no artwork is resolved, the app shows the built-in no-cover card.
 - `COLOR_FORMAT=BGR565` is useful if red and blue look swapped on your panel.
 - `LAYOUT_PROFILE=high_contrast` is optimized for lower-quality/off-angle resistive panels; `classic` keeps the previous visual style.
 
