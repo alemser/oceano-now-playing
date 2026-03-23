@@ -1,6 +1,7 @@
 """Fallback artwork providers for albums without usable artwork."""
 
 import logging
+import re
 from io import BytesIO
 from typing import Optional
 
@@ -15,62 +16,155 @@ class CoverArtArchive:
 
     MUSICBRAINZ_API = "https://musicbrainz.org/ws/2"
     COVER_ART_ARCHIVE_API = "https://coverartarchive.org"
+    USER_AGENT = "spi-now-playing/1.0 (https://github.com/alemser/spi-now-playing)"
 
     @staticmethod
-    def _search_release(artist: str, album: str, timeout: float = 3.0) -> Optional[str]:
-        """Search MusicBrainz for release MBID given artist and album."""
+    def _request_headers() -> dict:
+        """Return standard headers for external artwork lookups."""
+        return {"User-Agent": CoverArtArchive.USER_AGENT}
+
+    @staticmethod
+    def _album_query_candidates(album: str) -> list[str]:
+        """Build normalized album title candidates for MusicBrainz lookup."""
+        if not album:
+            return []
+
+        candidates = [album.strip()]
+        stripped = album.strip()
+
+        # Remove trailing edition/remaster qualifiers progressively.
+        while True:
+            updated = re.sub(r"\s*([\[(]).*?([\])])\s*$", "", stripped).strip()
+            if updated == stripped:
+                break
+            stripped = updated
+            if stripped:
+                candidates.append(stripped)
+
+        simplified = re.sub(
+            r"\b(remaster(?:ed)?|deluxe|edition|expanded|anniversary|bonus track version)\b",
+            "",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        simplified = re.sub(r"\s{2,}", " ", simplified).strip(" -")
+        if simplified:
+            candidates.append(simplified)
+
+        unique_candidates = []
+        seen = set()
+        for candidate in candidates:
+            lowered = candidate.lower()
+            if candidate and lowered not in seen:
+                seen.add(lowered)
+                unique_candidates.append(candidate)
+        return unique_candidates
+
+    @staticmethod
+    def _search_releases(artist: str, album: str, timeout: float = 3.0) -> list[dict]:
+        """Search MusicBrainz for candidate releases given artist and album."""
         if not artist or not album:
-            return None
+            return []
+
+        matches = []
+        seen_release_ids = set()
 
         try:
             url = f"{CoverArtArchive.MUSICBRAINZ_API}/release"
-            params = {
-                "query": f'artist:"{artist}" release:"{album}"',
-                "limit": 1,
-                "fmt": "json",
-            }
-            headers = {
-                "User-Agent": (
-                    "spi-now-playing/1.0 "
-                    "(https://github.com/alemser/spi-now-playing)"
+            for candidate_album in CoverArtArchive._album_query_candidates(album):
+                params = {
+                    "query": f'artist:"{artist}" release:"{candidate_album}"',
+                    "limit": 5,
+                    "fmt": "json",
+                }
+                response = requests.get(
+                    url,
+                    params=params,
+                    headers=CoverArtArchive._request_headers(),
+                    timeout=timeout,
                 )
-            }
+                response.raise_for_status()
 
-            response = requests.get(url, params=params, headers=headers, timeout=timeout)
-            response.raise_for_status()
+                data = response.json()
+                releases = data.get("releases") or []
+                for release in releases:
+                    release_id = release.get("id")
+                    if not release_id or release_id in seen_release_ids:
+                        continue
 
-            data = response.json()
-            releases = data.get("releases") or []
-            if releases:
-                return releases[0].get("id")
-            return None
+                    seen_release_ids.add(release_id)
+                    release_group = release.get("release-group") or {}
+                    matches.append(
+                        {
+                            "release_id": release_id,
+                            "release_group_id": release_group.get("id"),
+                            "title": release.get("title", ""),
+                        }
+                    )
+
+                if matches:
+                    logger.info(
+                        f"[CAA] MusicBrainz candidates for {artist} - {album}: {len(matches)}"
+                    )
+                    break
+
+            return matches
 
         except requests.RequestException as e:
             logger.warning(f"[CAA] MusicBrainz search failed: {type(e).__name__}: {e}")
-            return None
+            return []
         except (KeyError, ValueError) as e:
             logger.warning(f"[CAA] Invalid MusicBrainz response: {e}")
-            return None
+            return []
+
+    @staticmethod
+    def _candidate_artwork_urls(candidate: dict) -> list[str]:
+        """Build fallback artwork URLs for one MusicBrainz candidate."""
+        urls = []
+        release_id = candidate.get("release_id")
+        release_group_id = candidate.get("release_group_id")
+
+        if release_id:
+            urls.append(f"{CoverArtArchive.COVER_ART_ARCHIVE_API}/release/{release_id}/front")
+            urls.append(f"{CoverArtArchive.COVER_ART_ARCHIVE_API}/release/{release_id}/front-250.jpg")
+
+        if release_group_id:
+            urls.append(f"{CoverArtArchive.COVER_ART_ARCHIVE_API}/release-group/{release_group_id}/front")
+            urls.append(f"{CoverArtArchive.COVER_ART_ARCHIVE_API}/release-group/{release_group_id}/front-250.jpg")
+
+        return urls
 
     @staticmethod
     def fetch_artwork(artist: str, album: str, timeout: float = 3.0) -> Optional[Image.Image]:
         """Fetch album artwork image from Cover Art Archive."""
-        mbid = CoverArtArchive._search_release(artist, album, timeout=timeout)
-        if not mbid:
+        candidates = CoverArtArchive._search_releases(artist, album, timeout=timeout)
+        if not candidates:
             return None
 
-        try:
-            url = f"{CoverArtArchive.COVER_ART_ARCHIVE_API}/release/{mbid}/front-250.jpg"
-            response = requests.get(url, timeout=timeout)
-            response.raise_for_status()
-            return Image.open(BytesIO(response.content)).convert("RGB")
+        for candidate in candidates:
+            for url in CoverArtArchive._candidate_artwork_urls(candidate):
+                try:
+                    response = requests.get(
+                        url,
+                        headers=CoverArtArchive._request_headers(),
+                        timeout=timeout,
+                    )
+                    response.raise_for_status()
+                    logger.info(f"[CAA] Artwork found via {url}")
+                    return Image.open(BytesIO(response.content)).convert("RGB")
+                except requests.HTTPError as e:
+                    status_code = getattr(e.response, "status_code", None)
+                    if status_code == 404:
+                        logger.info(f"[CAA] Artwork not found at {url}")
+                        continue
+                    logger.warning(f"[CAA] Artwork fetch failed: {type(e).__name__}: {e}")
+                except requests.RequestException as e:
+                    logger.warning(f"[CAA] Artwork fetch failed: {type(e).__name__}: {e}")
+                except Exception as e:
+                    logger.warning(f"[CAA] Artwork decode failed: {type(e).__name__}: {e}")
+                    return None
 
-        except requests.RequestException as e:
-            logger.warning(f"[CAA] Artwork fetch failed: {type(e).__name__}: {e}")
-            return None
-        except Exception as e:
-            logger.warning(f"[CAA] Artwork decode failed: {type(e).__name__}: {e}")
-            return None
+        return None
 
 
 class ArtworkLookup:
