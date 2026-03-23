@@ -137,6 +137,46 @@ class TestCoverArtArchive:
 
         assert image is None
 
+    @patch('artwork.providers.Image.open')
+    @patch('artwork.providers.requests.get')
+    def test_fetch_artwork_decode_error_continues_to_next_candidate(self, mock_get, mock_image_open):
+        """Decode errors should continue trying candidate URLs instead of aborting."""
+        search_response = MagicMock()
+        search_response.raise_for_status.return_value = None
+        search_response.json.return_value = {
+            'releases': [
+                {
+                    'id': 'release-123',
+                    'title': 'Exodus',
+                    'release-group': {'id': 'group-456'},
+                }
+            ]
+        }
+
+        image_response_1 = MagicMock()
+        image_response_1.raise_for_status.return_value = None
+        image_response_1.content = b'bad-image'
+
+        image_response_2 = MagicMock()
+        image_response_2.raise_for_status.return_value = None
+        image_response_2.content = _fake_image_bytes(color=(10, 20, 30))
+
+        mock_get.side_effect = [
+            search_response,
+            image_response_1,
+            image_response_2,
+        ]
+
+        decode_error = OSError('cannot identify image file')
+        decoded_image = Image.new('RGB', (10, 10), color=(10, 20, 30))
+        mock_image_open.side_effect = [decode_error, decoded_image]
+
+        image = CoverArtArchive.fetch_artwork('Bob Marley & The Wailers', 'Exodus (2013 Remaster)')
+
+        assert image is not None
+        assert image.size == (10, 10)
+        assert mock_image_open.call_count == 2
+
     def test_fetch_artwork_missing_artist_album(self):
         """Missing artist or album should return None."""
         assert CoverArtArchive.fetch_artwork('', 'Album') is None

@@ -27,6 +27,8 @@ spi_module = importlib.util.module_from_spec(spec)
 try:
     spec.loader.exec_module(spi_module)
     states_are_equal = spi_module.states_are_equal
+    should_resolve_artwork = spi_module.should_resolve_artwork
+    ARTWORK_RETRY_INTERVAL_SECONDS = spi_module.ARTWORK_RETRY_INTERVAL_SECONDS
 except Exception as e:
     # Fallback: define a simple version for testing if import fails
     def states_are_equal(s1, s2):
@@ -39,6 +41,27 @@ except Exception as e:
             if s1.get(k) != s2.get(k):
                 return False
         return True
+
+    def should_resolve_artwork(
+        is_new_song,
+        artwork_changed,
+        previous_resolved_artwork,
+        previous_artwork_resolve_time,
+        now,
+    ):
+        if is_new_song or artwork_changed:
+            return True
+        if previous_resolved_artwork is None:
+            if previous_artwork_resolve_time is None:
+                return True
+            return (now - previous_artwork_resolve_time) >= 60.0
+        if previous_resolved_artwork.get('source') == 'volumio-placeholder':
+            if previous_artwork_resolve_time is None:
+                return True
+            return (now - previous_artwork_resolve_time) >= 60.0
+        return False
+
+    ARTWORK_RETRY_INTERVAL_SECONDS = 60.0
 
 
 class TestStatesAreEqual:
@@ -318,3 +341,60 @@ class TestDisplayStates:
             last_rendered_state = None  # Reset
         
         assert last_rendered_state is None
+
+
+class TestArtworkResolvePolicy:
+    """Test artwork re-resolution decision policy."""
+
+    def test_resolve_on_new_song(self):
+        """Always resolve artwork for a new song."""
+        assert should_resolve_artwork(
+            is_new_song=True,
+            artwork_changed=False,
+            previous_resolved_artwork={'source': 'volumio'},
+            previous_artwork_resolve_time=123.0,
+            now=130.0,
+        ) is True
+
+    def test_resolve_on_artwork_changed(self):
+        """Always resolve artwork when albumart URL changes."""
+        assert should_resolve_artwork(
+            is_new_song=False,
+            artwork_changed=True,
+            previous_resolved_artwork={'source': 'volumio'},
+            previous_artwork_resolve_time=123.0,
+            now=130.0,
+        ) is True
+
+    def test_no_retry_before_backoff_for_missing_artwork(self):
+        """Missing artwork should not be retried before backoff interval."""
+        now = 1000.0
+        assert should_resolve_artwork(
+            is_new_song=False,
+            artwork_changed=False,
+            previous_resolved_artwork=None,
+            previous_artwork_resolve_time=now - (ARTWORK_RETRY_INTERVAL_SECONDS - 1),
+            now=now,
+        ) is False
+
+    def test_retry_after_backoff_for_placeholder_artwork(self):
+        """Placeholder artwork should be retried after backoff interval."""
+        now = 1000.0
+        assert should_resolve_artwork(
+            is_new_song=False,
+            artwork_changed=False,
+            previous_resolved_artwork={'source': 'volumio-placeholder'},
+            previous_artwork_resolve_time=now - ARTWORK_RETRY_INTERVAL_SECONDS,
+            now=now,
+        ) is True
+
+    def test_no_retry_for_good_resolved_artwork(self):
+        """Resolved non-placeholder artwork should be reused."""
+        now = 1000.0
+        assert should_resolve_artwork(
+            is_new_song=False,
+            artwork_changed=False,
+            previous_resolved_artwork={'source': 'volumio'},
+            previous_artwork_resolve_time=now - 1000.0,
+            now=now,
+        ) is False

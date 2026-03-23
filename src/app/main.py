@@ -28,6 +28,7 @@ last_seek_timestamp = 0
 last_known_seek = 0
 is_sleeping = False
 is_showing_idle = False
+ARTWORK_RETRY_INTERVAL_SECONDS = 60.0
 
 # Global objects
 config = None
@@ -146,7 +147,34 @@ def detect_media_player(cfg: Config) -> MediaPlayer:
         return PiCorePlayerClient(cfg.lms_url)
 
     logger.info(f"Using Volumio client at {cfg.volumio_url}")
-    return VolumioClient(cfg.volumio_url)
+    return VolumioClient(
+        cfg.volumio_url,
+        external_artwork_enabled=cfg.external_artwork_enabled,
+    )
+
+
+def should_resolve_artwork(
+    is_new_song: bool,
+    artwork_changed: bool,
+    previous_resolved_artwork: dict | None,
+    previous_artwork_resolve_time: float | None,
+    now: float,
+) -> bool:
+    """Decide whether to resolve artwork again for the current state update."""
+    if is_new_song or artwork_changed:
+        return True
+
+    if previous_resolved_artwork is None:
+        if previous_artwork_resolve_time is None:
+            return True
+        return (now - previous_artwork_resolve_time) >= ARTWORK_RETRY_INTERVAL_SECONDS
+
+    if previous_resolved_artwork.get('source') == 'volumio-placeholder':
+        if previous_artwork_resolve_time is None:
+            return True
+        return (now - previous_artwork_resolve_time) >= ARTWORK_RETRY_INTERVAL_SECONDS
+
+    return False
 
 
 def states_are_equal(s1, s2):
@@ -259,11 +287,23 @@ def main():
                         artwork_changed = True
 
                     previous_resolved_artwork = last_state.get('_resolved_artwork') if last_state else None
+                    previous_artwork_resolve_time = (
+                        last_state.get('_artwork_resolve_time') if last_state else None
+                    )
 
-                    if is_new_song or artwork_changed or last_state is None:
+                    if should_resolve_artwork(
+                        is_new_song=is_new_song,
+                        artwork_changed=artwork_changed,
+                        previous_resolved_artwork=previous_resolved_artwork,
+                        previous_artwork_resolve_time=previous_artwork_resolve_time,
+                        now=now,
+                    ):
                         new_data['_resolved_artwork'] = player.resolve_artwork(new_data)
+                        new_data['_artwork_resolve_time'] = now
                     else:
                         new_data['_resolved_artwork'] = previous_resolved_artwork
+                        if previous_artwork_resolve_time is not None:
+                            new_data['_artwork_resolve_time'] = previous_artwork_resolve_time
 
                     if is_new_song:
                         show_capa_mode = False

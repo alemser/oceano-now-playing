@@ -176,6 +176,20 @@ def test_detect_media_player_volumio_explicit(monkeypatch):
     assert isinstance(player, VolumioClient)
 
 
+def test_detect_media_player_volumio_explicit_respects_external_artwork_flag(monkeypatch):
+    """Explicit Volumio mode must propagate EXTERNAL_ARTWORK_ENABLED config."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'volumio')
+    monkeypatch.setenv('EXTERNAL_ARTWORK_ENABLED', 'false')
+    mock_ws_module = MagicMock()
+    mock_ws_module.WebSocketException = Exception
+    mock_ws_module.create_connection = MagicMock()
+    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
+    from media_players.volumio import VolumioClient
+    player = fn(cfg)
+    assert isinstance(player, VolumioClient)
+    assert player.external_artwork_enabled is False
+
+
 def test_detect_media_player_moode(monkeypatch):
     """detect_media_player() returns a MoodeClient when MEDIA_PLAYER=moode."""
     monkeypatch.setenv('MEDIA_PLAYER', 'moode')

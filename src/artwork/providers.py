@@ -156,7 +156,7 @@ class CoverArtArchive:
                     logger.warning(f"[CAA] Artwork fetch failed: {type(e).__name__}: {e}")
                 except Exception as e:
                     logger.warning(f"[CAA] Artwork decode failed: {type(e).__name__}: {e}")
-                    return None
+                    continue
 
         return None
 
