@@ -162,6 +162,22 @@ def _image_bytes(color=(255, 0, 0)):
     return buffer.getvalue()
 
 
+@patch('media_players.volumio.hashlib.sha256')
+def test_is_placeholder_image_detects_c9_hash(mock_sha256, mock_volumio_client):
+    """The known Volumio default placeholder hash c9...db1 must match exactly."""
+    client, _ = mock_volumio_client
+    mock_sha256.return_value.hexdigest.return_value = (
+        'c9c0eb5de9ba0d540f0784f2de757a18ef095005032e97fd559ce74430167db1'
+    )
+
+    image = Image.new('RGB', (16, 16), color=(255, 255, 255))
+    is_placeholder, reason, sha256 = client._is_placeholder_image(b'ignored', image)
+
+    assert is_placeholder is True
+    assert reason == 'exact-sha256-match'
+    assert sha256.endswith('0167db1')
+
+
 @patch('media_players.volumio.requests.get')
 def test_volumio_resolve_artwork_success(mock_get, mock_volumio_client, volumio_state_playing):
     """Resolve Volumio artwork into a renderer-friendly object."""

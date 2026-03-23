@@ -15,6 +15,7 @@ from media_players.base import MediaPlayer
 logger = logging.getLogger(__name__)
 
 VOLUMIO_PLACEHOLDER_SHA256_HASHES = {
+    "c9c0eb5de9ba0d540f0784f2de757a18ef095005032e97fd559ce74430167db1",
     "d38e8d8533672451d5a3572c0c8c7d4e89218277116bc24afe33af545597ec85",
 }
 ARTWORK_PLACEHOLDER_RETRY_DELAY_SECONDS = 0.7
