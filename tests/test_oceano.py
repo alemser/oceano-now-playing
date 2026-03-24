@@ -121,6 +121,17 @@ def test_oceano_pbeg_resets_progress_counters():
     assert client._state["duration"] == 0
 
 
+def test_oceano_core_metadata_promotes_play_without_status_event():
+    """Core metadata should wake playback state when status events are delayed."""
+    client = OceanoClient("/tmp/nonexistent")
+    assert client._state["status"] == "stop"
+
+    client._apply_item({"type": "core", "code": "minm", "data": b"Breathe Again"})
+
+    assert client._state["status"] == "play"
+    assert client._state["title"] == "Breathe Again"
+
+
 def test_oceano_state_has_transport_quality_defaults():
     """Oceano should expose AirPlay transport quality for renderer badges."""
     client = OceanoClient("/tmp/nonexistent")

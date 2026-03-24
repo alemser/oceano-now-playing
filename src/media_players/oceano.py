@@ -232,6 +232,19 @@ class OceanoClient(MediaPlayer):
             self._state["playback_source"] = source
             self._has_new_state = True
 
+    def _promote_play_status_from_metadata(self) -> None:
+        """Promote status to play when track metadata arrives without status events.
+
+        Some AirPlay sessions deliver core metadata before pbeg/prsm/prgr. In that
+        case, the UI can remain stuck on idle despite active playback unless we
+        optimistically promote status to play.
+        """
+        if self._state.get("status") == "play":
+            return
+        self._state["status"] = "play"
+        self._metadata_grace_deadline = time.monotonic() + TRACK_METADATA_GRACE_SECONDS
+        self._has_new_state = True
+
     def _apply_item(self, item: dict) -> None:
         item_type = item.get("type", "")
         code = item.get("code", "")
@@ -242,14 +255,17 @@ class OceanoClient(MediaPlayer):
             if code == "minm" and value:
                 self._clear_embedded_artwork_on_metadata_change("title", value)
                 self._state["title"] = value
+                self._promote_play_status_from_metadata()
                 self._has_new_state = True
             elif code == "asar" and value:
                 self._clear_embedded_artwork_on_metadata_change("artist", value)
                 self._state["artist"] = value
+                self._promote_play_status_from_metadata()
                 self._has_new_state = True
             elif code == "asal" and value:
                 self._clear_embedded_artwork_on_metadata_change("album", value)
                 self._state["album"] = value
+                self._promote_play_status_from_metadata()
                 self._has_new_state = True
             elif code in {"snua", "asai", "asar", "asal", "minm"} and value:
                 self._update_playback_source(value)
