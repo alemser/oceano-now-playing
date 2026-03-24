@@ -66,7 +66,9 @@ You can customize the behavior in `src/config.py` or by setting environment vari
 | --- | --- | --- |
 | `FB_DEVICE` | `/dev/fb0` | Environment variable or edit `Config.framebuffer_device` |
 | `COLOR_FORMAT` | `RGB565` | Environment variable or edit `Config.color_format` |
-| `LAYOUT_PROFILE` | `high_contrast` | Environment variable or edit `Config.layout_profile` (`high_contrast` or `classic`) |
+| `UI_PRESET` | `high_contrast_rotate` | Environment variable or edit `Config.ui_preset` |
+| `LAYOUT_PROFILE` | from `UI_PRESET` | Optional explicit override: `high_contrast` or `classic` |
+| `DISPLAY_MODE` | from `UI_PRESET` | Optional explicit override: `rotate`, `text`, `artwork`, or `hybrid` |
 | `MEDIA_PLAYER` | `auto` | Environment variable or edit `Config.media_player_type` |
 | `VOLUMIO_URL` | `ws://localhost:3000/socket.io/?EIO=3&transport=websocket` | Environment variable or edit `Config.volumio_url` |
 | `MOODE_URL` | `http://localhost/engine-mpd.php` | Environment variable or edit `Config.moode_url` |
@@ -78,16 +80,23 @@ You can customize the behavior in `src/config.py` or by setting environment vari
 Notes:
 
 - `MEDIA_PLAYER=auto` tries to detect the active backend automatically.
+- `UI_PRESET` is the recommended single control because it keeps style and mode connected.
+- Supported presets: `high_contrast_rotate`, `high_contrast_text`, `high_contrast_artwork`, `high_contrast_hybrid`, `classic_rotate`, `classic_text`, `classic_artwork`, `classic_hybrid`.
+- `LAYOUT_PROFILE` and `DISPLAY_MODE` can still be used as explicit overrides when needed.
+- For your own device/runtime behavior, set `UI_PRESET` in Linux (systemd service `Environment=` entries), not in code.
+- Edit `src/config.py` only if you want to change project defaults for all installations.
 - `EXTERNAL_ARTWORK_ENABLED=true` enables artwork lookup from external providers (Cover Art Archive, iTunes, Deezer) using artist + album metadata.
 - `EXTERNAL_ARTWORK_ENABLED=false` disables external lookup; if no artwork is resolved, the app shows the built-in no-cover card.
 - `COLOR_FORMAT=BGR565` is useful if red and blue look swapped on your panel.
 - `LAYOUT_PROFILE=high_contrast` is optimized for lower-quality/off-angle resistive panels; `classic` keeps the previous visual style.
+- `DISPLAY_MODE=rotate` alternates text/artwork using `CYCLE_TIME`; `text` and `artwork` stay fixed on one mode.
+- `DISPLAY_MODE=hybrid` shows artwork and metadata together on one screen (no rotation).
 
 To change these via the service, edit `/etc/systemd/system/spi-now-playing.service` and add entries under `[Service]`, for example:
 
 ```ini
 Environment="MEDIA_PLAYER=volumio"
-Environment="LAYOUT_PROFILE=high_contrast"
+Environment="UI_PRESET=high_contrast_rotate"
 Environment="CYCLE_TIME=45"
 Environment="STANDBY_TIMEOUT=900"
 Environment="EXTERNAL_ARTWORK_ENABLED=false"

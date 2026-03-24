@@ -9,7 +9,7 @@ Covers utility functions with logic:
 import pytest
 import sys
 import os
-from PIL import Image
+from PIL import Image, ImageChops
 from unittest.mock import MagicMock, patch
 
 # Add src directory to path
@@ -280,12 +280,72 @@ class TestMissingArtworkRendering:
                     'seek': 30000,
                     'duration': 180000,
                 },
-                show_capa_mode=True,
+                show_artwork_mode=True,
             )
 
         assert rendered_images
         center_pixel = rendered_images[-1].getpixel((renderer.width // 2, renderer.height // 2 - 10))
         assert center_pixel != (0, 0, 0)
+
+    def test_hybrid_mode_renders_art_and_text_regions(self, mock_renderer):
+        """Hybrid mode should paint both artwork area and text area on the same frame."""
+        renderer = mock_renderer
+        rendered_images = []
+
+        with patch.object(renderer, '_write_to_fb', side_effect=lambda img: rendered_images.append(img.copy())):
+            renderer.render(
+                {
+                    'title': 'The Heathen',
+                    'artist': 'Bob Marley & The Wailers',
+                    'album': 'Exodus (2013 Remaster)',
+                    'samplerate': '44.1 kHz',
+                    'bitdepth': '16 bit',
+                    'albumart': '',
+                    'status': 'play',
+                    'seek': 45000,
+                    'duration': 180000,
+                },
+                show_hybrid_mode=True,
+            )
+
+        assert rendered_images
+        rendered = rendered_images[-1]
+        bg = renderer.layout_profile.bg_color
+
+        # Left side (artwork block) should not be plain background.
+        assert rendered.getpixel((40, 40)) != bg
+
+        # Right side (text block) should also contain non-background pixels.
+        right_panel = rendered.crop((220, 10, 470, 260))
+        bg_panel = Image.new('RGB', right_panel.size, color=bg)
+        assert ImageChops.difference(right_panel, bg_panel).getbbox() is not None
+
+    def test_progress_bar_uses_millisecond_units(self, mock_renderer):
+        """Progress fill should match seek/duration values expressed in milliseconds."""
+        renderer = mock_renderer
+        rendered_images = []
+
+        with patch.object(renderer, '_write_to_fb', side_effect=lambda img: rendered_images.append(img.copy())):
+            renderer.render(
+                {
+                    'title': 'Exodus',
+                    'artist': 'Bob Marley & The Wailers',
+                    'album': 'Exodus',
+                    'albumart': '',
+                    'status': 'play',
+                    'seek': 45000,
+                    'duration': 180000,
+                },
+                show_hybrid_mode=True,
+            )
+
+        assert rendered_images
+        rendered = rendered_images[-1]
+        pb_y = renderer.height - renderer.layout_profile.progress_height
+
+        # 45s / 180s = 25%, so x=100 should be filled and x=200 should remain track color.
+        assert rendered.getpixel((100, pb_y + 1)) == renderer.default_accent
+        assert rendered.getpixel((200, pb_y + 1)) == renderer.layout_profile.progress_track_color
 
 
 class TestFontHandling:

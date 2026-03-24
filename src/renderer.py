@@ -313,7 +313,7 @@ class Renderer:
 
         return card
 
-    def render(self, data, show_capa_mode=False):
+    def render(self, data, show_artwork_mode=False, show_hybrid_mode=False):
         """Renders the complete V2 interface."""
         if not data:
             return
@@ -347,7 +347,6 @@ class Renderer:
         seek = data.get('seek', 0) or 0
         if seek is None:
             seek = 0
-        seek = seek / 1000  # ms to s
         
         duration = data.get('duration', 0) or 0
         if duration is None:
@@ -355,6 +354,7 @@ class Renderer:
         
         progress = 0
         if duration > 0:
+            # Keep both values in milliseconds to avoid unit mismatch.
             progress = min(seek / duration, 1.0)
 
         # Get Art and Accent Color
@@ -387,7 +387,53 @@ class Renderer:
         _, th = draw.textbbox((0, 0), icon, font=f_small)[2:]
         draw.text((10, pb_y - th - 10), icon, fill=accent_color, font=f_small)
 
-        if not show_capa_mode:
+        if show_hybrid_mode:
+            # --- MODE 3: HYBRID (ART + TEXT ON THE SAME SCREEN) ---
+            hybrid_art_size = 184 if profile.name == "high_contrast" else 170
+            art_x = 16
+            art_y = 14
+
+            if art:
+                hybrid_art = art.resize((hybrid_art_size, hybrid_art_size), Image.Resampling.LANCZOS)
+            else:
+                placeholder_art = self._render_missing_artwork_card(title, artist, album)
+                hybrid_art = placeholder_art.resize((hybrid_art_size, hybrid_art_size), Image.Resampling.LANCZOS)
+            img.paste(hybrid_art, (art_x, art_y))
+
+            text_x = art_x + hybrid_art_size + 16
+            text_w = self.width - text_x - 12
+            y_cursor = 16
+
+            title_wrap_width = 14 if profile.name == "high_contrast" else 16
+            title_lines = textwrap.wrap(title, width=title_wrap_width)[:2]
+            for line in title_lines:
+                draw.text((text_x, y_cursor), line, fill=profile.title_color, font=f_large)
+                line_h = draw.textbbox((0, 0), line, font=f_large)[3]
+                y_cursor += line_h + 4
+
+            artist_text = textwrap.shorten(artist, width=30, placeholder="...")
+            draw.text((text_x, y_cursor + 4), artist_text, fill=profile.artist_color, font=f_med)
+            y_cursor += draw.textbbox((0, 0), artist_text, font=f_med)[3] + 8
+
+            album_text = textwrap.shorten(album, width=32, placeholder="...")
+            draw.text((text_x, y_cursor), album_text, fill=profile.album_color, font=f_med)
+
+            quality_str = f"{samplerate} | {bitdepth}" if samplerate and bitdepth else samplerate or bitdepth
+            if quality_str:
+                quality_text = textwrap.shorten(quality_str, width=28, placeholder="...")
+                qw, qh = draw.textbbox((0, 0), quality_text, font=f_tech)[2:]
+                box_y = pb_y - (qh + 20)
+                box_x1 = text_x
+                box_x2 = min(text_x + text_w, text_x + qw + 16)
+                draw.rectangle(
+                    (box_x1, box_y, box_x2, box_y + qh + 12),
+                    fill=(0, 0, 0),
+                    outline=accent_color,
+                    width=2,
+                )
+                draw.text((text_x + 8, box_y + 6), quality_text, fill=profile.quality_text_color, font=f_tech)
+
+        elif not show_artwork_mode:
             # --- MODE 1: CENTERED TEXT ---
             y_cursor = 18 if profile.name == "high_contrast" else 35
             

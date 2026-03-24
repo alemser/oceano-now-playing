@@ -12,6 +12,18 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 
+UI_PRESETS = {
+    "high_contrast_rotate": ("high_contrast", "rotate"),
+    "high_contrast_text": ("high_contrast", "text"),
+    "high_contrast_artwork": ("high_contrast", "artwork"),
+    "high_contrast_hybrid": ("high_contrast", "hybrid"),
+    "classic_rotate": ("classic", "rotate"),
+    "classic_text": ("classic", "text"),
+    "classic_artwork": ("classic", "artwork"),
+    "classic_hybrid": ("classic", "hybrid"),
+}
+
+
 def _parse_bool_env(var_name: str, default: bool) -> bool:
     """Parse a boolean environment variable using common true/false values."""
     value = os.getenv(var_name)
@@ -44,6 +56,8 @@ class Config:
     framebuffer_device: str = "/dev/fb0"
     color_format: str = "RGB565"
     layout_profile: str = "high_contrast"
+    display_mode: str = "rotate"
+    ui_preset: str = "high_contrast_rotate"
 
     # Media player
     media_player_type: str = "auto"
@@ -66,7 +80,9 @@ class Config:
         Environment variables (with defaults):
         - FB_DEVICE: framebuffer device path (default: /dev/fb0)
         - COLOR_FORMAT: RGB565 or BGR565 (default: RGB565)
+        - UI_PRESET: combined style+mode preset (default: high_contrast_rotate)
         - LAYOUT_PROFILE: renderer layout profile (classic or high_contrast)
+        - DISPLAY_MODE: rotate, text, artwork, or hybrid
         - MEDIA_PLAYER: auto, volumio, moode, or picore (default: auto)
         - VOLUMIO_URL: WebSocket URL for Volumio
         - MOODE_URL: HTTP polling endpoint for MoOde (e.g., http://localhost/engine-mpd.php)
@@ -83,7 +99,21 @@ class Config:
             "FB_DEVICE", self.framebuffer_device
         )
         self.color_format = os.getenv("COLOR_FORMAT", self.color_format)
-        self.layout_profile = os.getenv("LAYOUT_PROFILE", self.layout_profile).lower()
+        self.ui_preset = os.getenv("UI_PRESET", self.ui_preset).lower()
+        if self.ui_preset not in UI_PRESETS:
+            valid_ui_presets = tuple(UI_PRESETS.keys())
+            raise ValueError(
+                f"Invalid UI_PRESET environment variable: must be one of {valid_ui_presets}, "
+                f"got '{self.ui_preset}'"
+            )
+
+        self.layout_profile, self.display_mode = UI_PRESETS[self.ui_preset]
+
+        if "LAYOUT_PROFILE" in os.environ:
+            self.layout_profile = os.environ["LAYOUT_PROFILE"].lower()
+        if "DISPLAY_MODE" in os.environ:
+            self.display_mode = os.environ["DISPLAY_MODE"].lower()
+
         self.media_player_type = os.getenv(
             "MEDIA_PLAYER", self.media_player_type
         ).lower()
@@ -153,6 +183,20 @@ class Config:
                 f"got '{self.layout_profile}'"
             )
 
+        valid_display_modes = ("rotate", "text", "artwork", "hybrid")
+        if self.display_mode not in valid_display_modes:
+            raise ValueError(
+                f"display_mode must be one of {valid_display_modes}, "
+                f"got '{self.display_mode}'"
+            )
+
+        valid_ui_presets = tuple(UI_PRESETS.keys())
+        if self.ui_preset not in valid_ui_presets:
+            raise ValueError(
+                f"ui_preset must be one of {valid_ui_presets}, "
+                f"got '{self.ui_preset}'"
+            )
+
         # Framebuffer device
         if not self.framebuffer_device:
             raise ValueError("framebuffer_device cannot be empty")
@@ -162,7 +206,7 @@ class Config:
         logger.info(
             f"Display: {self.display_width}x{self.display_height}, "
             f"format={self.color_format}, device={self.framebuffer_device}, "
-            f"layout={self.layout_profile}"
+            f"preset={self.ui_preset}, layout={self.layout_profile}, mode={self.display_mode}"
         )
         logger.info(
             f"Media Player: {self.media_player_type.upper()}, "

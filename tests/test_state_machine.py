@@ -261,21 +261,21 @@ class TestModeAlternation:
         """Test that mode alternates between text and artwork.
         
         The app switches between:
-        - Artwork mode (show_capa_mode=False): album cover
-        - Text mode (show_capa_mode=True): technical info
+        - Artwork mode (show_artwork_mode=True): album cover
+        - Text mode (show_artwork_mode=False): technical info
         """
-        show_capa = False
+        show_artwork_mode = False
         
-        # First cycle: artwork
-        assert show_capa is False
+        # First cycle: text
+        assert show_artwork_mode is False
         
-        # Switch to text mode
-        show_capa = True
-        assert show_capa is True
+        # Switch to artwork mode
+        show_artwork_mode = True
+        assert show_artwork_mode is True
         
-        # Switch back to artwork
-        show_capa = False
-        assert show_capa is False
+        # Switch back to text mode
+        show_artwork_mode = False
+        assert show_artwork_mode is False
     
     def test_mode_timing(self):
         """Test mode alternation timing (every CYCLE_TIME seconds)."""

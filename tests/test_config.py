@@ -15,7 +15,7 @@ from config import Config
 def clean_env():
     """Remove config-related env vars between tests."""
     config_vars = [
-        'FB_DEVICE', 'COLOR_FORMAT', 'LAYOUT_PROFILE', 'MEDIA_PLAYER',
+        'FB_DEVICE', 'COLOR_FORMAT', 'UI_PRESET', 'LAYOUT_PROFILE', 'DISPLAY_MODE', 'MEDIA_PLAYER',
         'VOLUMIO_URL', 'MOODE_URL', 'LMS_URL', 'CYCLE_TIME', 'STANDBY_TIMEOUT',
         'EXTERNAL_ARTWORK_ENABLED'
     ]
@@ -39,7 +39,9 @@ def test_config_defaults():
     assert cfg.display_height == 320
     assert cfg.framebuffer_device == "/dev/fb0"
     assert cfg.color_format == "RGB565"
+    assert cfg.ui_preset == "high_contrast_rotate"
     assert cfg.layout_profile == "high_contrast"
+    assert cfg.display_mode == "rotate"
     assert cfg.media_player_type == "auto"
     assert cfg.external_artwork_enabled is True
     assert cfg.mode_cycle_time == 30
@@ -60,11 +62,54 @@ def test_config_env_COLOR_FORMAT(monkeypatch):
     assert cfg.color_format == "BGR565"
 
 
+def test_config_env_UI_PRESET(monkeypatch):
+    """Config maps UI_PRESET to layout profile and display mode."""
+    monkeypatch.setenv("UI_PRESET", "classic_artwork")
+    cfg = Config()
+
+    assert cfg.ui_preset == "classic_artwork"
+    assert cfg.layout_profile == "classic"
+    assert cfg.display_mode == "artwork"
+
+
+def test_config_env_UI_PRESET_hybrid(monkeypatch):
+    """Config supports one-screen hybrid preset."""
+    monkeypatch.setenv("UI_PRESET", "high_contrast_hybrid")
+    cfg = Config()
+
+    assert cfg.layout_profile == "high_contrast"
+    assert cfg.display_mode == "hybrid"
+
+
+def test_config_env_UI_PRESET_invalid(monkeypatch):
+    """Config rejects invalid UI_PRESET values."""
+    monkeypatch.setenv("UI_PRESET", "retro_magic")
+    with pytest.raises(ValueError, match="Invalid UI_PRESET"):
+        Config()
+
+
 def test_config_env_LAYOUT_PROFILE(monkeypatch):
-    """Config loads LAYOUT_PROFILE from environment."""
+    """Config allows explicit LAYOUT_PROFILE override."""
     monkeypatch.setenv("LAYOUT_PROFILE", "classic")
     cfg = Config()
     assert cfg.layout_profile == "classic"
+
+
+def test_config_env_DISPLAY_MODE(monkeypatch):
+    """Config loads DISPLAY_MODE from environment."""
+    monkeypatch.setenv("DISPLAY_MODE", "artwork")
+    cfg = Config()
+    assert cfg.display_mode == "artwork"
+
+
+def test_config_display_mode_overrides_ui_preset(monkeypatch):
+    """DISPLAY_MODE should override mode chosen by UI_PRESET."""
+    monkeypatch.setenv("UI_PRESET", "classic_artwork")
+    monkeypatch.setenv("DISPLAY_MODE", "text")
+    cfg = Config()
+
+    assert cfg.layout_profile == "classic"
+    assert cfg.display_mode == "text"
 
 
 def test_config_validate_invalid_layout_profile():
@@ -72,6 +117,14 @@ def test_config_validate_invalid_layout_profile():
     cfg = Config()
     cfg.layout_profile = "retro"
     with pytest.raises(ValueError, match="layout_profile must be one of"):
+        cfg.validate()
+
+
+def test_config_validate_invalid_display_mode():
+    """Config.validate() rejects unsupported display modes."""
+    cfg = Config()
+    cfg.display_mode = "mosaic"
+    with pytest.raises(ValueError, match="display_mode must be one of"):
         cfg.validate()
 
 

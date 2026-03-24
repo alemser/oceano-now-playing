@@ -274,7 +274,7 @@ def main():
     is_showing_idle = True
     logger.info("Startup screen displayed.")
 
-    show_capa_mode = False
+    show_artwork_mode = config.display_mode == 'artwork'
 
     while True:
         try:
@@ -326,11 +326,22 @@ def main():
                             new_data['_artwork_resolve_time'] = previous_artwork_resolve_time
 
                     if is_new_song:
-                        show_capa_mode = False
-                        last_cycle_time = now
+                        if config.display_mode == 'artwork':
+                            show_artwork_mode = True
+                        else:
+                            show_artwork_mode = False
+                        if config.display_mode == 'rotate':
+                            last_cycle_time = now
                         if renderer:
                             renderer.clear_art_cache()
-                        logger.info(f"New song detected: {new_data.get('title')} - {new_data.get('artist')}. Starting in text mode.")
+                        if config.display_mode == 'hybrid':
+                            mode_label = 'hybrid'
+                        else:
+                            mode_label = 'cover' if show_artwork_mode else 'text'
+                        logger.info(
+                            f"New song detected: {new_data.get('title')} - {new_data.get('artist')}. "
+                            f"Starting in {mode_label} mode."
+                        )
 
                     last_known_seek = new_data.get('seek', 0)
                     if last_known_seek is None:
@@ -370,20 +381,33 @@ def main():
                     renderer.clear()
                     is_sleeping = False
                     is_showing_idle = False
-                    show_capa_mode = False
-                    last_cycle_time = now
+                    if config.display_mode == 'artwork':
+                        show_artwork_mode = True
+                    else:
+                        show_artwork_mode = False
+                    if config.display_mode == 'rotate':
+                        last_cycle_time = now
                     last_rendered_state = None
                     last_rendered_mode = None
 
                 last_active_time = now
 
-                if last_state.get('status') == 'play' and now - last_cycle_time > config.mode_cycle_time:
-                    show_capa_mode = not show_capa_mode
-                    last_cycle_time = now
-                    logger.info(f"Switching to {'cover' if show_capa_mode else 'text'} mode...")
+                if config.display_mode == 'rotate':
+                    if last_state.get('status') == 'play' and now - last_cycle_time > config.mode_cycle_time:
+                        show_artwork_mode = not show_artwork_mode
+                        last_cycle_time = now
+                        logger.info(f"Switching to {'cover' if show_artwork_mode else 'text'} mode...")
+                elif config.display_mode == 'artwork':
+                    show_artwork_mode = True
+                else:
+                    show_artwork_mode = False
 
                 state_changed = not states_are_equal(last_state, last_rendered_state)
-                mode_changed = show_capa_mode != last_rendered_mode
+                if config.display_mode == 'hybrid':
+                    current_render_mode = 'hybrid'
+                else:
+                    current_render_mode = 'artwork' if show_artwork_mode else 'text'
+                mode_changed = current_render_mode != last_rendered_mode
                 time_to_update_progress = (
                     last_state.get('status') == 'play' and now - last_render_time >= 1.0
                 )
@@ -396,10 +420,14 @@ def main():
                     render_data = last_state.copy()
                     render_data['seek'] = current_seek
 
-                    renderer.render(render_data, show_capa_mode)
+                    renderer.render(
+                        render_data,
+                        show_artwork_mode=show_artwork_mode,
+                        show_hybrid_mode=(config.display_mode == 'hybrid'),
+                    )
 
                     last_rendered_state = last_state.copy()
-                    last_rendered_mode = show_capa_mode
+                    last_rendered_mode = current_render_mode
                     last_render_time = now
                     is_showing_idle = False
                     is_sleeping = False
