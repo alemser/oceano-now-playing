@@ -340,6 +340,7 @@ class Renderer:
         album = data.get('album', 'Unknown')
         samplerate = data.get('samplerate', '')
         bitdepth = data.get('bitdepth', '')
+        playback_source = data.get('playback_source', '')
         albumart = data.get('albumart', '')
         status = data.get('status', 'stop')
         
@@ -379,13 +380,14 @@ class Renderer:
         # --- DRAW PROGRESS BAR (Common for both modes) ---
         pb_height = profile.progress_height
         pb_y = self.height - pb_height
+        progress_color = accent_color
         draw.rectangle((0, pb_y, self.width, self.height), fill=profile.progress_track_color) # Background
-        draw.rectangle((0, pb_y, int(self.width * progress), self.height), fill=accent_color) # Progress
+        draw.rectangle((0, pb_y, int(self.width * progress), self.height), fill=progress_color) # Progress
 
         # --- DRAW STATUS ICON ---
         icon = "▶" if status == 'play' else "II"
         _, th = draw.textbbox((0, 0), icon, font=f_small)[2:]
-        draw.text((10, pb_y - th - 10), icon, fill=accent_color, font=f_small)
+        draw.text((10, pb_y - th - 10), icon, fill=progress_color, font=f_small)
 
         if show_hybrid_mode:
             # --- MODE 3: HYBRID (ART + TEXT ON THE SAME SCREEN) ---
@@ -453,7 +455,14 @@ class Renderer:
             y_cursor = self._draw_centered_text(draw, album[:album_max_chars], y_cursor, f_med, profile.album_color)
             
             # Tech Info at bottom center
-            quality_str = f"{samplerate} | {bitdepth}" if samplerate and bitdepth else samplerate or bitdepth
+            quality_parts = []
+            if playback_source:
+                quality_parts.append(playback_source)
+            if samplerate:
+                quality_parts.append(samplerate)
+            if bitdepth:
+                quality_parts.append(bitdepth)
+            quality_str = " | ".join(quality_parts)
             if quality_str:
                 qw, qh = draw.textbbox((0, 0), quality_str, font=f_tech)[2:]
                 if profile.name == "high_contrast":

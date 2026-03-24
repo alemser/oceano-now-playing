@@ -320,6 +320,31 @@ class TestMissingArtworkRendering:
         bg_panel = Image.new('RGB', right_panel.size, color=bg)
         assert ImageChops.difference(right_panel, bg_panel).getbbox() is not None
 
+    def test_progress_bar_uses_ms_units(self, mock_renderer):
+        """Progress bar should be computed from seek/duration values in ms."""
+        renderer = mock_renderer
+        rendered_images = []
+
+        with patch.object(renderer, '_write_to_fb', side_effect=lambda img: rendered_images.append(img.copy())):
+            renderer.render(
+                {
+                    'title': 'Bubble Toes',
+                    'artist': 'Jack Johnson',
+                    'album': 'Brushfire Fairytales',
+                    'status': 'play',
+                    'seek': 60000,
+                    'duration': 180000,
+                },
+            )
+
+        assert rendered_images
+        rendered = rendered_images[-1]
+
+        # 60000/180000 = 33.3%, so x=100 should be fill and x=300 should be track.
+        pb_y = renderer.height - renderer.layout_profile.progress_height
+        assert rendered.getpixel((100, pb_y + 1)) == renderer.default_accent
+        assert rendered.getpixel((300, pb_y + 1)) == renderer.layout_profile.progress_track_color
+
     def test_progress_bar_uses_millisecond_units(self, mock_renderer):
         """Progress fill should match seek/duration values expressed in milliseconds."""
         renderer = mock_renderer

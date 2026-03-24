@@ -17,7 +17,7 @@ def clean_env():
     config_vars = [
         'FB_DEVICE', 'COLOR_FORMAT', 'UI_PRESET', 'LAYOUT_PROFILE', 'DISPLAY_MODE', 'MEDIA_PLAYER',
         'VOLUMIO_URL', 'MOODE_URL', 'LMS_URL', 'CYCLE_TIME', 'STANDBY_TIMEOUT',
-        'EXTERNAL_ARTWORK_ENABLED'
+        'EXTERNAL_ARTWORK_ENABLED', 'OCEANO_METADATA_PIPE'
     ]
     original = {}
     for var in config_vars:
@@ -159,6 +159,14 @@ def test_config_env_LMS_URL(monkeypatch):
     assert cfg.lms_url == test_url
 
 
+def test_config_env_OCEANO_METADATA_PIPE(monkeypatch):
+    """Config loads OCEANO_METADATA_PIPE from environment."""
+    test_pipe = "/tmp/custom-shairport-metadata"
+    monkeypatch.setenv("OCEANO_METADATA_PIPE", test_pipe)
+    cfg = Config()
+    assert cfg.oceano_metadata_pipe == test_pipe
+
+
 def test_config_env_STANDBY_TIMEOUT(monkeypatch):
     """Config loads and parses STANDBY_TIMEOUT from environment."""
     monkeypatch.setenv("STANDBY_TIMEOUT", "1200")
@@ -258,6 +266,13 @@ def test_config_validate_moode():
     """Config.validate() accepts moode as valid media_player_type."""
     cfg = Config()
     cfg.media_player_type = "moode"
+    cfg.validate()  # Should not raise
+
+
+def test_config_validate_oceano():
+    """Config.validate() accepts oceano as valid media_player_type."""
+    cfg = Config()
+    cfg.media_player_type = "oceano"
     cfg.validate()  # Should not raise
 
 

@@ -8,6 +8,7 @@ import threading
 from config import Config
 from media_players.base import MediaPlayer
 from media_players.moode import MoodeClient
+from media_players.oceano import OceanoClient
 from media_players.picore import PiCorePlayerClient
 from media_players.volumio import VolumioClient
 from renderer import Renderer
@@ -59,6 +60,21 @@ def _connect_with_timeout(client: MediaPlayer, timeout: float = 3.0) -> bool:
     return result["connected"]
 
 
+def _oceano_probe_has_activity(client: OceanoClient, timeout: float = 0.75) -> bool:
+    """Return True when Oceano emits a fresh metadata event during probe."""
+    try:
+        probe_state = client.receive_message(timeout=timeout)
+    except Exception as e:
+        logger.debug(f"Oceano activity probe failed: {e}")
+        return False
+
+    if not probe_state:
+        return False
+
+    # Accept only active playback updates to avoid false positives from stale pipe presence.
+    return probe_state.get("status") == "play"
+
+
 def auto_detect_media_player(cfg: Config) -> MediaPlayer:
     """Auto-detect and instantiate the correct media player client."""
     logger.info("Auto-detecting media player...")
@@ -73,6 +89,14 @@ def auto_detect_media_player(cfg: Config) -> MediaPlayer:
             ),
         ),
         ('moode', cfg.moode_url, MoodeClient),
+        (
+            'oceano',
+            cfg.oceano_metadata_pipe,
+            lambda pipe: OceanoClient(
+                pipe,
+                external_artwork_enabled=cfg.external_artwork_enabled,
+            ),
+        ),
     ]
 
     for name, url, client_factory in candidates:
@@ -81,6 +105,14 @@ def auto_detect_media_player(cfg: Config) -> MediaPlayer:
             client = client_factory(url)
 
             if _connect_with_timeout(client, timeout=3.0):
+                if isinstance(client, OceanoClient) and not _oceano_probe_has_activity(client):
+                    logger.info("✗ oceano connected but no active metadata stream detected")
+                    try:
+                        client.close()
+                    except Exception as close_error:
+                        logger.debug(f"Failed to close inactive oceano probe: {close_error}")
+                    continue
+
                 logger.info(f"✓ Auto-detected: {name.upper()} is running")
 
                 try:
@@ -128,6 +160,8 @@ def detect_media_player(cfg: Config) -> MediaPlayer:
             detected_type = 'moode'
         elif isinstance(client, PiCorePlayerClient):
             detected_type = 'picore'
+        elif isinstance(client, OceanoClient):
+            detected_type = 'oceano'
 
         if detected_type is not None:
             cfg.media_player_type = detected_type
@@ -147,6 +181,13 @@ def detect_media_player(cfg: Config) -> MediaPlayer:
         logger.info(f"Using piCorePlayer client at {cfg.lms_url}")
         return PiCorePlayerClient(cfg.lms_url)
 
+    if player_type == 'oceano':
+        logger.info(f"Using Oceano client at {cfg.oceano_metadata_pipe}")
+        return OceanoClient(
+            cfg.oceano_metadata_pipe,
+            external_artwork_enabled=cfg.external_artwork_enabled,
+        )
+
     logger.info(f"Using Volumio client at {cfg.volumio_url}")
     return VolumioClient(
         cfg.volumio_url,
@@ -160,6 +201,7 @@ def should_resolve_artwork(
     previous_resolved_artwork: dict | None,
     previous_artwork_resolve_time: float | None,
     now: float,
+    metadata_became_meaningful: bool = False,
 ) -> bool:
     """Decide whether to resolve artwork again for the current state update.
 
@@ -169,6 +211,11 @@ def should_resolve_artwork(
         the same, which would otherwise cause redundant fallback lookups.
     """
     if is_new_song:
+        return True
+
+    if metadata_became_meaningful:
+        # Refresh once when artist/album transitions from placeholders to
+        # meaningful metadata, even if we currently hold fallback artwork.
         return True
 
     if previous_resolved_artwork is None:
@@ -193,6 +240,42 @@ def artwork_identity_changed(current_state: dict | None, previous_state: dict | 
         (current_state.get('artist') or "") != (previous_state.get('artist') or "")
         or (current_state.get('album') or "") != (previous_state.get('album') or "")
     )
+
+
+def _is_meaningful_metadata_value(value: str | None) -> bool:
+    """Return True when metadata value is not empty or placeholder text."""
+    normalized = (value or "").strip().lower()
+    return normalized not in {"", "unknown", "[unknown]", "none", "n/a"}
+
+
+def metadata_became_meaningful(current_state: dict | None, previous_state: dict | None) -> bool:
+    """Return True when artist/album improves from placeholder to meaningful."""
+    if current_state is None:
+        return False
+
+    current_artist = _is_meaningful_metadata_value(current_state.get('artist'))
+    current_album = _is_meaningful_metadata_value(current_state.get('album'))
+    current_is_meaningful = current_artist and current_album
+    if not current_is_meaningful:
+        return False
+
+    if previous_state is None:
+        return True
+
+    previous_artist = _is_meaningful_metadata_value(previous_state.get('artist'))
+    previous_album = _is_meaningful_metadata_value(previous_state.get('album'))
+    previous_is_meaningful = previous_artist and previous_album
+    return not previous_is_meaningful
+
+
+def has_backend_artwork(state: dict | None) -> bool:
+    """Return True when state already carries non-fallback resolved artwork."""
+    if not state:
+        return False
+    resolved = state.get('_resolved_artwork')
+    if not isinstance(resolved, dict):
+        return False
+    return resolved.get('source') != 'fallback'
 
 
 def states_are_equal(s1, s2):
@@ -298,6 +381,7 @@ def main():
                 if new_data:
                     is_new_song = False
                     artwork_identity_is_new = artwork_identity_changed(new_data, last_state)
+                    metadata_upgraded = metadata_became_meaningful(new_data, last_state)
                     if not last_state:
                         is_new_song = True
                     elif new_data.get('title') != last_state.get('title') or new_data.get('artist') != last_state.get('artist'):
@@ -314,16 +398,22 @@ def main():
                         previous_resolved_artwork=previous_resolved_artwork,
                         previous_artwork_resolve_time=previous_artwork_resolve_time,
                         now=now,
+                        metadata_became_meaningful=metadata_upgraded,
                     ):
-                        new_data['_resolved_artwork'] = player.resolve_artwork(
-                            new_data,
-                            timeout=ARTWORK_RESOLVE_TIMEOUT_SECONDS,
-                        )
+                        if not has_backend_artwork(new_data):
+                            new_data['_resolved_artwork'] = player.resolve_artwork(
+                                new_data,
+                                timeout=ARTWORK_RESOLVE_TIMEOUT_SECONDS,
+                            )
                         new_data['_artwork_resolve_time'] = now
                     else:
-                        new_data['_resolved_artwork'] = previous_resolved_artwork
-                        if previous_artwork_resolve_time is not None:
-                            new_data['_artwork_resolve_time'] = previous_artwork_resolve_time
+                        if has_backend_artwork(new_data):
+                            # Keep freshly provided backend art even if we skip fallback re-resolution.
+                            new_data['_artwork_resolve_time'] = now
+                        else:
+                            new_data['_resolved_artwork'] = previous_resolved_artwork
+                            if previous_artwork_resolve_time is not None:
+                                new_data['_artwork_resolve_time'] = previous_artwork_resolve_time
 
                     if is_new_song:
                         if config.display_mode == 'artwork':
@@ -343,10 +433,15 @@ def main():
                             f"Starting in {mode_label} mode."
                         )
 
-                    last_known_seek = new_data.get('seek', 0)
-                    if last_known_seek is None:
-                        last_known_seek = 0
-                    last_seek_timestamp = now
+                    incoming_seek = new_data.get('seek')
+                    if incoming_seek is None:
+                        incoming_seek = 0
+
+                    # Some backends emit frequent metadata-only updates. Only
+                    # reset interpolation anchor when seek actually changes.
+                    if last_seek_timestamp == 0 or incoming_seek != last_known_seek:
+                        last_known_seek = incoming_seek
+                        last_seek_timestamp = now
                     status = new_data.get('status')
                     if status == 'play':
                         last_active_time = now

@@ -152,6 +152,40 @@ def _load_detect_function(monkeypatch, mock_ws_module):
     return main_module.detect_media_player, cfg
 
 
+def _load_detect_components(monkeypatch, mock_ws_module):
+    """Helper variant that also returns the imported app.main module."""
+    monkeypatch.setitem(sys.modules, 'websocket', mock_ws_module)
+    for mod in (
+        'media_players.volumio',
+        'media_players.moode',
+        'media_players.picore',
+        'media_players.oceano',
+        'config',
+        'spi_now_playing',
+        'app.main',
+    ):
+        sys.modules.pop(mod, None)
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'config',
+        os.path.join(os.path.dirname(__file__), '..', 'src', 'config.py')
+    )
+    config_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config_module)
+
+    spec = importlib.util.spec_from_file_location(
+        'spi_now_playing',
+        os.path.join(os.path.dirname(__file__), '..', 'src', 'spi-now-playing.py')
+    )
+    main_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(main_module)
+
+    cfg = config_module.Config()
+    app_main_module = sys.modules['app.main']
+    return main_module.detect_media_player, cfg, app_main_module
+
+
 def test_detect_media_player_default_returns_volumio(monkeypatch):
     """detect_media_player() returns a VolumioClient when MEDIA_PLAYER is unset."""
     monkeypatch.delenv('MEDIA_PLAYER', raising=False)
@@ -212,6 +246,17 @@ def test_detect_media_player_picore(monkeypatch):
     assert isinstance(player, PiCorePlayerClient)
 
 
+def test_detect_media_player_oceano(monkeypatch):
+    """detect_media_player() returns an OceanoClient when MEDIA_PLAYER=oceano."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'oceano')
+    mock_ws_module = MagicMock()
+    mock_ws_module.WebSocketException = Exception
+    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
+    from media_players.oceano import OceanoClient
+    player = fn(cfg)
+    assert isinstance(player, OceanoClient)
+
+
 def test_detect_media_player_auto_detects_volumio(monkeypatch):
     """detect_media_player() auto-detects Volumio when MEDIA_PLAYER=auto."""
     monkeypatch.setenv('MEDIA_PLAYER', 'auto')
@@ -238,3 +283,54 @@ def test_detect_media_player_auto_falls_back_to_volumio_on_failure(monkeypatch):
     player = fn(cfg)
     # Should fall back to Volumio even when detection fails
     assert isinstance(player, VolumioClient)
+
+
+def test_detect_media_player_auto_skips_inactive_oceano(monkeypatch):
+    """Auto mode should not select Oceano when pipe exists but emits no active events."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'auto')
+    mock_ws_module = MagicMock()
+    mock_ws_module.WebSocketException = Exception
+    mock_ws_module.create_connection = MagicMock(side_effect=Exception("Volumio unavailable"))
+
+    fn, cfg, main_module = _load_detect_components(monkeypatch, mock_ws_module)
+
+    monkeypatch.setattr(
+        main_module,
+        '_connect_with_timeout',
+        lambda client, timeout=3.0: isinstance(client, main_module.OceanoClient),
+    )
+    monkeypatch.setattr(
+        main_module,
+        '_oceano_probe_has_activity',
+        lambda client, timeout=0.75: False,
+    )
+
+    from media_players.volumio import VolumioClient
+    player = fn(cfg)
+    assert isinstance(player, VolumioClient)
+
+
+def test_detect_media_player_auto_detects_active_oceano(monkeypatch):
+    """Auto mode should select Oceano when an active stream is detected."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'auto')
+    mock_ws_module = MagicMock()
+    mock_ws_module.WebSocketException = Exception
+    mock_ws_module.create_connection = MagicMock(side_effect=Exception("Volumio unavailable"))
+
+    fn, cfg, main_module = _load_detect_components(monkeypatch, mock_ws_module)
+
+    monkeypatch.setattr(
+        main_module,
+        '_connect_with_timeout',
+        lambda client, timeout=3.0: isinstance(client, main_module.OceanoClient),
+    )
+    monkeypatch.setattr(
+        main_module,
+        '_oceano_probe_has_activity',
+        lambda client, timeout=0.75: True,
+    )
+
+    from media_players.oceano import OceanoClient
+    player = fn(cfg)
+    assert isinstance(player, OceanoClient)
+    assert cfg.media_player_type == 'oceano'

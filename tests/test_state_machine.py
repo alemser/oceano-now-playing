@@ -29,6 +29,8 @@ try:
     states_are_equal = spi_module.states_are_equal
     should_resolve_artwork = spi_module.should_resolve_artwork
     artwork_identity_changed = spi_module.artwork_identity_changed
+    metadata_became_meaningful = spi_module.metadata_became_meaningful
+    has_backend_artwork = spi_module.has_backend_artwork
     ARTWORK_RETRY_INTERVAL_SECONDS = spi_module.ARTWORK_RETRY_INTERVAL_SECONDS
 except Exception as e:
     # Fallback: define a simple version for testing if import fails
@@ -49,8 +51,11 @@ except Exception as e:
         previous_resolved_artwork,
         previous_artwork_resolve_time,
         now,
+        metadata_became_meaningful=False,
     ):
         if is_new_song:
+            return True
+        if metadata_became_meaningful:
             return True
         if previous_resolved_artwork is None:
             if previous_artwork_resolve_time is None:
@@ -69,6 +74,29 @@ except Exception as e:
             (current_state.get('artist') or '') != (previous_state.get('artist') or '')
             or (current_state.get('album') or '') != (previous_state.get('album') or '')
         )
+
+    def metadata_became_meaningful(current_state, previous_state):
+        def meaningful(value):
+            normalized = (value or '').strip().lower()
+            return normalized not in {'', 'unknown', '[unknown]', 'none', 'n/a'}
+
+        if current_state is None:
+            return False
+        current_ok = meaningful(current_state.get('artist')) and meaningful(current_state.get('album'))
+        if not current_ok:
+            return False
+        if previous_state is None:
+            return True
+        previous_ok = meaningful(previous_state.get('artist')) and meaningful(previous_state.get('album'))
+        return not previous_ok
+
+    def has_backend_artwork(state):
+        if not state:
+            return False
+        resolved = state.get('_resolved_artwork')
+        if not isinstance(resolved, dict):
+            return False
+        return resolved.get('source') != 'fallback'
 
     ARTWORK_RETRY_INTERVAL_SECONDS = 60.0
 
@@ -408,6 +436,18 @@ class TestArtworkResolvePolicy:
             now=now,
         ) is False
 
+    def test_retry_when_metadata_becomes_meaningful(self):
+        """Placeholder metadata -> real artist/album should trigger one refresh."""
+        now = 1000.0
+        assert should_resolve_artwork(
+            is_new_song=False,
+            artwork_changed=False,
+            previous_resolved_artwork={'source': 'fallback'},
+            previous_artwork_resolve_time=now - 5.0,
+            now=now,
+            metadata_became_meaningful=True,
+        ) is True
+
     def test_no_retry_for_good_resolved_artwork(self):
         """Resolved non-placeholder artwork should be reused."""
         now = 1000.0
@@ -440,3 +480,37 @@ class TestArtworkIdentityChanged:
         previous = {'artist': 'A', 'album': 'X', 'title': 'Song 1'}
         current = {'artist': 'A', 'album': 'X', 'title': 'Song 2'}
         assert artwork_identity_changed(current, previous) is False
+
+
+class TestMetadataBecameMeaningful:
+    """Test placeholder -> meaningful metadata transition detection."""
+
+    def test_true_on_unknown_to_real_metadata(self):
+        previous = {'artist': 'Unknown', 'album': 'Unknown'}
+        current = {'artist': 'Toni Braxton', 'album': 'Toni Braxton'}
+        assert metadata_became_meaningful(current, previous) is True
+
+    def test_false_when_still_placeholder(self):
+        previous = {'artist': 'Unknown', 'album': 'Unknown'}
+        current = {'artist': 'Unknown', 'album': 'Unknown'}
+        assert metadata_became_meaningful(current, previous) is False
+
+    def test_false_when_already_meaningful(self):
+        previous = {'artist': 'Toni Braxton', 'album': 'Toni Braxton'}
+        current = {'artist': 'Toni Braxton', 'album': 'Toni Braxton'}
+        assert metadata_became_meaningful(current, previous) is False
+
+
+class TestHasBackendArtwork:
+    """Test detection of backend-provided (non-fallback) artwork payloads."""
+
+    def test_true_for_oceano_source(self):
+        state = {'_resolved_artwork': {'source': 'oceano', 'cache_key': 'oceano:abc'}}
+        assert has_backend_artwork(state) is True
+
+    def test_false_for_fallback_source(self):
+        state = {'_resolved_artwork': {'source': 'fallback', 'cache_key': 'fallback:A|B'}}
+        assert has_backend_artwork(state) is False
+
+    def test_false_for_missing_payload(self):
+        assert has_backend_artwork({}) is False

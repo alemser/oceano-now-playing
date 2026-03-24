@@ -69,10 +69,11 @@ You can customize the behavior in `src/config.py` or by setting environment vari
 | `UI_PRESET` | `high_contrast_rotate` | Environment variable or edit `Config.ui_preset` |
 | `LAYOUT_PROFILE` | from `UI_PRESET` | Optional explicit override: `high_contrast` or `classic` |
 | `DISPLAY_MODE` | from `UI_PRESET` | Optional explicit override: `rotate`, `text`, `artwork`, or `hybrid` |
-| `MEDIA_PLAYER` | `auto` | Environment variable or edit `Config.media_player_type` |
+| `MEDIA_PLAYER` | `auto` | Environment variable or edit `Config.media_player_type` (`auto`, `volumio`, `moode`, `picore`, `oceano`) |
 | `VOLUMIO_URL` | `ws://localhost:3000/socket.io/?EIO=3&transport=websocket` | Environment variable or edit `Config.volumio_url` |
 | `MOODE_URL` | `http://localhost/engine-mpd.php` | Environment variable or edit `Config.moode_url` |
 | `LMS_URL` | `ws://localhost:9000` | Environment variable or edit `Config.lms_url` |
+| `OCEANO_METADATA_PIPE` | `/tmp/shairport-sync-metadata` | Environment variable or edit `Config.oceano_metadata_pipe` |
 | `EXTERNAL_ARTWORK_ENABLED` | `true` | Environment variable using `true/false`, `on/off`, `yes/no`, or `1/0` |
 | `CYCLE_TIME` | `30` | Environment variable or edit `Config.mode_cycle_time` |
 | `STANDBY_TIMEOUT` | `600` | Environment variable or edit `Config.standby_timeout` |
@@ -80,6 +81,8 @@ You can customize the behavior in `src/config.py` or by setting environment vari
 Notes:
 
 - `MEDIA_PLAYER=auto` tries to detect the active backend automatically.
+- In auto mode, `oceano` is selected only when an active metadata stream is observed (not just when the FIFO exists).
+- `MEDIA_PLAYER=oceano` reads now-playing metadata directly from `shairport-sync` metadata pipe.
 - `UI_PRESET` is the recommended single control because it keeps style and mode connected.
 - Supported presets: `high_contrast_rotate`, `high_contrast_text`, `high_contrast_artwork`, `high_contrast_hybrid`, `classic_rotate`, `classic_text`, `classic_artwork`, `classic_hybrid`.
 - `LAYOUT_PROFILE` and `DISPLAY_MODE` can still be used as explicit overrides when needed.
@@ -95,7 +98,8 @@ Notes:
 To change these via the service, edit `/etc/systemd/system/spi-now-playing.service` and add entries under `[Service]`, for example:
 
 ```ini
-Environment="MEDIA_PLAYER=volumio"
+Environment="MEDIA_PLAYER=auto"
+Environment="OCEANO_METADATA_PIPE=/tmp/shairport-sync-metadata"
 Environment="UI_PRESET=high_contrast_rotate"
 Environment="CYCLE_TIME=45"
 Environment="STANDBY_TIMEOUT=900"
@@ -166,7 +170,8 @@ src/
 │   ├── base.py              # MediaPlayer abstract base class
 │   ├── volumio.py           # Volumio integration and artwork resolution
 │   ├── moode.py             # MoOde integration stub
-│   └── picore.py            # piCorePlayer integration stub
+│   ├── picore.py            # piCorePlayer integration stub
+│   └── oceano.py            # AirPlay metadata reader via shairport-sync pipe
 ├── config.py                # Application configuration
 ├── renderer.py              # Framebuffer renderer
 └── spi-now-playing.py       # Thin compatibility entrypoint

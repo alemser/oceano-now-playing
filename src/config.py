@@ -64,6 +64,7 @@ class Config:
     volumio_url: str = "ws://localhost:3000/socket.io/?EIO=3&transport=websocket"
     moode_url: str = "http://localhost/engine-mpd.php"
     lms_url: str = "ws://localhost:9000"
+    oceano_metadata_pipe: str = "/tmp/shairport-sync-metadata"
     external_artwork_enabled: bool = True
 
     # Timing (seconds)
@@ -83,10 +84,11 @@ class Config:
         - UI_PRESET: combined style+mode preset (default: high_contrast_rotate)
         - LAYOUT_PROFILE: renderer layout profile (classic or high_contrast)
         - DISPLAY_MODE: rotate, text, artwork, or hybrid
-        - MEDIA_PLAYER: auto, volumio, moode, or picore (default: auto)
+        - MEDIA_PLAYER: auto, volumio, moode, picore, or oceano (default: auto)
         - VOLUMIO_URL: WebSocket URL for Volumio
         - MOODE_URL: HTTP polling endpoint for MoOde (e.g., http://localhost/engine-mpd.php)
         - LMS_URL: WebSocket URL for piCorePlayer/LMS
+        - OCEANO_METADATA_PIPE: shairport-sync metadata fifo path
         - EXTERNAL_ARTWORK_ENABLED: enable external artwork fallback lookups (default: true)
         - CYCLE_TIME: text/artwork mode cycle in seconds (default: 30)
         - STANDBY_TIMEOUT: display sleep timeout in seconds (default: 600)
@@ -120,6 +122,10 @@ class Config:
         self.volumio_url = os.getenv("VOLUMIO_URL", self.volumio_url)
         self.moode_url = os.getenv("MOODE_URL", self.moode_url)
         self.lms_url = os.getenv("LMS_URL", self.lms_url)
+        self.oceano_metadata_pipe = os.getenv(
+            "OCEANO_METADATA_PIPE",
+            self.oceano_metadata_pipe,
+        )
         self.external_artwork_enabled = _parse_bool_env(
             "EXTERNAL_ARTWORK_ENABLED",
             self.external_artwork_enabled,
@@ -160,7 +166,7 @@ class Config:
             )
 
         # Media player type
-        valid_players = ("auto", "volumio", "moode", "picore")
+        valid_players = ("auto", "volumio", "moode", "picore", "oceano")
         if self.media_player_type not in valid_players:
             raise ValueError(
                 f"media_player_type must be one of {valid_players}, "
@@ -220,3 +226,5 @@ class Config:
             logger.info(f"MoOde URL: {self.moode_url}")
         elif self.media_player_type == "picore":
             logger.info(f"LMS URL: {self.lms_url}")
+        elif self.media_player_type == "oceano":
+            logger.info(f"Oceano metadata pipe: {self.oceano_metadata_pipe}")
