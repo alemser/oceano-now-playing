@@ -278,6 +278,20 @@ def has_backend_artwork(state: dict | None) -> bool:
     return resolved.get('source') != 'fallback'
 
 
+def should_reconnect_player(client: MediaPlayer) -> bool:
+    """Return True when the active player transport has dropped.
+
+    This allows the main loop to re-enter the outer connect path after a
+    backend disconnects mid-run, which is required for FIFO-based backends
+    like Oceano after the writer closes the metadata pipe.
+    """
+    try:
+        return not client.is_connected()
+    except Exception as e:
+        logger.debug(f"Error checking player connection state: {e}")
+        return True
+
+
 def states_are_equal(s1, s2):
     """Compares two states to see if visible fields have changed."""
     if s1 is None or s2 is None:
@@ -377,6 +391,11 @@ def main():
                     last_sync_time = now
 
                 new_data = player.receive_message(timeout=0.1)
+                if should_reconnect_player(player):
+                    logger.info("Media player disconnected. Reconnecting...")
+                    player.close()
+                    time.sleep(0.5)
+                    break
 
                 if new_data:
                     is_new_song = False
@@ -491,7 +510,7 @@ def main():
                     if last_state.get('status') == 'play' and now - last_cycle_time > config.mode_cycle_time:
                         show_artwork_mode = not show_artwork_mode
                         last_cycle_time = now
-                        logger.info(f"Switching to {'cover' if show_artwork_mode else 'text'} mode...")
+                        logger.debug(f"Switching to {'cover' if show_artwork_mode else 'text'} mode...")
                 elif config.display_mode == 'artwork':
                     show_artwork_mode = True
                 else:

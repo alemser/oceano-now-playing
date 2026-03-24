@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import select
+import time
 from io import BytesIO
 
 from PIL import Image
@@ -16,6 +17,7 @@ AIRPLAY_TRANSPORT_BITDEPTH = "16 bit"
 SOURCE_AIRPLAY = "AirPlay"
 SOURCE_BLUETOOTH = "Bluetooth"
 SOURCE_UPNP = "UPnP"
+TRACK_METADATA_GRACE_SECONDS = 0.8
 
 ITEM_PATTERN = re.compile(
     rb"<item>\s*<type>([0-9a-fA-F]{8})</type>\s*<code>([0-9a-fA-F]{8})</code>\s*<length>(\d+)</length>\s*(?:<data encoding=\"base64\">(.*?)</data>)?\s*</item>",
@@ -48,6 +50,30 @@ class OceanoClient(MediaPlayer):
             "playback_source": SOURCE_AIRPLAY,
         }
         self._has_new_state = False
+        self._metadata_grace_deadline: float | None = None
+
+    def _is_meaningful_metadata(self, value: str | None) -> bool:
+        """Return True when metadata is not blank/placeholder text."""
+        normalized = (value or "").strip().lower()
+        return normalized not in {"", "unknown", "[unknown]", "none", "n/a"}
+
+    def _should_defer_state_emit(self) -> bool:
+        """Delay placeholder-only play states briefly to avoid UI flicker."""
+        if self._metadata_grace_deadline is None:
+            return False
+
+        now = time.monotonic()
+        if now >= self._metadata_grace_deadline:
+            self._metadata_grace_deadline = None
+            return False
+
+        title_ready = self._is_meaningful_metadata(self._state.get("title"))
+        artist_ready = self._is_meaningful_metadata(self._state.get("artist"))
+        if title_ready and artist_ready:
+            self._metadata_grace_deadline = None
+            return False
+
+        return self._state.get("status") == "play"
 
     def _clear_embedded_artwork_on_metadata_change(self, field: str, value: str) -> None:
         """Drop previous embedded artwork when incoming core metadata changes."""
@@ -66,6 +92,7 @@ class OceanoClient(MediaPlayer):
                 return False
             self.fd = os.open(self.metadata_pipe, os.O_RDONLY | os.O_NONBLOCK)
             self._buffer = b""
+            self._metadata_grace_deadline = None
             return True
         except Exception as e:
             logger.error("Error connecting to Oceano metadata pipe %s: %s", self.metadata_pipe, e)
@@ -87,6 +114,9 @@ class OceanoClient(MediaPlayer):
         try:
             rlist, _, _ = select.select([self.fd], [], [], timeout)
             if not rlist:
+                if self._has_new_state and not self._should_defer_state_emit():
+                    self._has_new_state = False
+                    return self._state.copy()
                 return None
 
             chunk = os.read(self.fd, 65536)
@@ -96,12 +126,26 @@ class OceanoClient(MediaPlayer):
                 return None
             self._buffer += chunk
 
+            # Drain immediately available chunks to coalesce track metadata bursts.
+            while True:
+                more_ready, _, _ = select.select([self.fd], [], [], 0.0)
+                if not more_ready:
+                    break
+                more_chunk = os.read(self.fd, 65536)
+                if not more_chunk:
+                    logger.debug("EOF on Oceano metadata pipe, closing descriptor")
+                    self.close()
+                    return None
+                self._buffer += more_chunk
+
             parsed_any = False
             for item in self._extract_items():
                 parsed_any = True
                 self._apply_item(item)
 
             if parsed_any and self._has_new_state:
+                if self._should_defer_state_emit():
+                    return None
                 self._has_new_state = False
                 return self._state.copy()
         except Exception as e:
@@ -227,6 +271,7 @@ class OceanoClient(MediaPlayer):
             self._state["status"] = "play"
             self._state["seek"] = 0
             self._state["duration"] = 0
+            self._metadata_grace_deadline = time.monotonic() + TRACK_METADATA_GRACE_SECONDS
             self._has_new_state = True
             return
 
@@ -237,6 +282,7 @@ class OceanoClient(MediaPlayer):
 
         if code in {"pend", "pfls", "stop"}:
             self._state["status"] = "stop"
+            self._metadata_grace_deadline = None
             self._has_new_state = True
             return
 

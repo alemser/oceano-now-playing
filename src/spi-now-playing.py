@@ -6,6 +6,7 @@ from app.main import (
     states_are_equal,
     should_resolve_artwork,
     artwork_identity_changed,
+    should_reconnect_player,
 )
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "states_are_equal",
     "should_resolve_artwork",
     "artwork_identity_changed",
+    "should_reconnect_player",
 ]
 
 

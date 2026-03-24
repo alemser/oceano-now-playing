@@ -31,6 +31,7 @@ try:
     artwork_identity_changed = spi_module.artwork_identity_changed
     metadata_became_meaningful = spi_module.metadata_became_meaningful
     has_backend_artwork = spi_module.has_backend_artwork
+    should_reconnect_player = spi_module.should_reconnect_player
     ARTWORK_RETRY_INTERVAL_SECONDS = spi_module.ARTWORK_RETRY_INTERVAL_SECONDS
 except Exception as e:
     # Fallback: define a simple version for testing if import fails
@@ -97,6 +98,12 @@ except Exception as e:
         if not isinstance(resolved, dict):
             return False
         return resolved.get('source') != 'fallback'
+
+    def should_reconnect_player(player):
+        try:
+            return not player.is_connected()
+        except Exception:
+            return True
 
     ARTWORK_RETRY_INTERVAL_SECONDS = 60.0
 
@@ -226,6 +233,28 @@ class TestPlaybackStateTransitions:
     def test_playing_to_stopped(self, volumio_state_playing, volumio_state_stopped):
         """Test transition from playing to stopped."""
         assert states_are_equal(volumio_state_playing, volumio_state_stopped) is False
+
+
+class TestReconnectPolicy:
+    """Test reconnect decisions after player transport drops."""
+
+    def test_reconnect_when_player_disconnects(self):
+        """A disconnected transport should force the outer reconnect loop."""
+
+        class StubPlayer:
+            def is_connected(self):
+                return False
+
+        assert should_reconnect_player(StubPlayer()) is True
+
+    def test_no_reconnect_while_player_still_connected(self):
+        """Timeouts without transport loss should not trigger reconnect."""
+
+        class StubPlayer:
+            def is_connected(self):
+                return True
+
+        assert should_reconnect_player(StubPlayer()) is False
 
 
 class TestAirPlayHandling:
