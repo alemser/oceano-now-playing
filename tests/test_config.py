@@ -16,8 +16,7 @@ def clean_env():
     """Remove config-related env vars between tests."""
     config_vars = [
         'FB_DEVICE', 'COLOR_FORMAT', 'UI_PRESET', 'LAYOUT_PROFILE', 'DISPLAY_MODE', 'MEDIA_PLAYER',
-        'VOLUMIO_URL', 'MOODE_URL', 'LMS_URL', 'CYCLE_TIME', 'STANDBY_TIMEOUT',
-        'EXTERNAL_ARTWORK_ENABLED', 'OCEANO_METADATA_PIPE'
+        'CYCLE_TIME', 'STANDBY_TIMEOUT', 'EXTERNAL_ARTWORK_ENABLED', 'OCEANO_METADATA_PIPE'
     ]
     original = {}
     for var in config_vars:
@@ -42,7 +41,7 @@ def test_config_defaults():
     assert cfg.ui_preset == "high_contrast_rotate"
     assert cfg.layout_profile == "high_contrast"
     assert cfg.display_mode == "rotate"
-    assert cfg.media_player_type == "auto"
+    assert cfg.media_player_type == "oceano"
     assert cfg.external_artwork_enabled is True
     assert cfg.mode_cycle_time == 30
     assert cfg.standby_timeout == 600
@@ -129,34 +128,17 @@ def test_config_validate_invalid_display_mode():
 
 
 def test_config_env_MEDIA_PLAYER(monkeypatch):
-    """Config loads MEDIA_PLAYER from environment and normalizes to lowercase."""
-    monkeypatch.setenv("MEDIA_PLAYER", "MoOde")
+    """Config normalizes explicit Oceano selection to lowercase."""
+    monkeypatch.setenv("MEDIA_PLAYER", "OcEaNo")
     cfg = Config()
-    assert cfg.media_player_type == "moode"
+    assert cfg.media_player_type == "oceano"
 
 
-def test_config_env_VOLUMIO_URL(monkeypatch):
-    """Config loads VOLUMIO_URL from environment."""
-    test_url = "ws://192.168.1.50:3000/socket.io/?EIO=3&transport=websocket"
-    monkeypatch.setenv("VOLUMIO_URL", test_url)
+def test_config_env_MEDIA_PLAYER_legacy_value_is_coerced(monkeypatch):
+    """Legacy MEDIA_PLAYER values are coerced to oceano for migration safety."""
+    monkeypatch.setenv("MEDIA_PLAYER", "volumio")
     cfg = Config()
-    assert cfg.volumio_url == test_url
-
-
-def test_config_env_MOODE_URL(monkeypatch):
-    """Config loads MOODE_URL from environment."""
-    test_url = "ws://192.168.1.60/moode"
-    monkeypatch.setenv("MOODE_URL", test_url)
-    cfg = Config()
-    assert cfg.moode_url == test_url
-
-
-def test_config_env_LMS_URL(monkeypatch):
-    """Config loads LMS_URL from environment."""
-    test_url = "ws://192.168.1.70:9000"
-    monkeypatch.setenv("LMS_URL", test_url)
-    cfg = Config()
-    assert cfg.lms_url == test_url
+    assert cfg.media_player_type == "oceano"
 
 
 def test_config_env_OCEANO_METADATA_PIPE(monkeypatch):
@@ -255,20 +237,6 @@ def test_config_validate_passes_with_valid_settings():
     cfg.validate()  # Should not raise
 
 
-def test_config_validate_picore():
-    """Config.validate() accepts picore as valid media_player_type."""
-    cfg = Config()
-    cfg.media_player_type = "picore"
-    cfg.validate()  # Should not raise
-
-
-def test_config_validate_moode():
-    """Config.validate() accepts moode as valid media_player_type."""
-    cfg = Config()
-    cfg.media_player_type = "moode"
-    cfg.validate()  # Should not raise
-
-
 def test_config_validate_oceano():
     """Config.validate() accepts oceano as valid media_player_type."""
     cfg = Config()
@@ -308,15 +276,9 @@ def test_config_validate_color_format_case_insensitive():
     cfg.validate()  # Should not raise
 
 
-def test_config_validate_media_player_auto():
-    """Config.validate() accepts 'auto' as valid media_player_type."""
+def test_config_validate_media_player_only_oceano_allowed():
+    """Config.validate() rejects non-Oceano media player values."""
     cfg = Config()
     cfg.media_player_type = "auto"
-    cfg.validate()  # Should not raise
-
-
-def test_config_env_MEDIA_PLAYER_auto(monkeypatch):
-    """Config loads MEDIA_PLAYER=auto from environment."""
-    monkeypatch.setenv("MEDIA_PLAYER", "auto")
-    cfg = Config()
-    assert cfg.media_player_type == "auto"
+    with pytest.raises(ValueError, match="media_player_type must be one of"):
+        cfg.validate()

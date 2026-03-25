@@ -1,12 +1,12 @@
-"""Tests for the MediaPlayer abstract base class, VolumioClient inheritance,
-and the detect_media_player() factory function.
+"""Tests for the MediaPlayer abstract base class, OceanoClient inheritance,
+and the Oceano-only detect_media_player() factory function.
 
 Verifies that:
 - MediaPlayer cannot be instantiated directly (it is abstract)
-- VolumioClient is a subclass of MediaPlayer
-- All required abstract methods are implemented by VolumioClient
-- detect_media_player() returns the correct implementation for each
-  value of the MEDIA_PLAYER environment variable
+- OceanoClient is a subclass of MediaPlayer
+- All required abstract methods are implemented by OceanoClient
+- detect_media_player() returns the Oceano implementation and coerces
+    legacy MEDIA_PLAYER values safely
 """
 
 import pytest
@@ -28,17 +28,13 @@ def media_player_class():
 
 
 @pytest.fixture
-def volumio_client_class(monkeypatch):
-    """Import VolumioClient with a mocked websocket module."""
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    monkeypatch.setitem(sys.modules, 'websocket', mock_ws_module)
+def oceano_client_class():
+    """Import a fresh copy of OceanoClient for each test."""
+    if 'media_players.oceano' in sys.modules:
+        del sys.modules['media_players.oceano']
 
-    if 'media_players.volumio' in sys.modules:
-        del sys.modules['media_players.volumio']
-
-    from media_players.volumio import VolumioClient
-    return VolumioClient
+    from media_players.oceano import OceanoClient
+    return OceanoClient
 
 
 def test_media_player_is_abstract(media_player_class):
@@ -56,14 +52,14 @@ def test_media_player_abstract_methods(media_player_class):
     assert 'close' in abstract_methods
 
 
-def test_volumio_client_is_media_player(media_player_class, volumio_client_class):
-    """VolumioClient is a subclass of MediaPlayer."""
-    assert issubclass(volumio_client_class, media_player_class)
+def test_oceano_client_is_media_player(media_player_class, oceano_client_class):
+    """OceanoClient is a subclass of MediaPlayer."""
+    assert issubclass(oceano_client_class, media_player_class)
 
 
-def test_volumio_client_implements_all_abstract_methods(volumio_client_class):
-    """VolumioClient implements every method required by MediaPlayer."""
-    client = volumio_client_class('ws://localhost:3000')
+def test_oceano_client_implements_all_abstract_methods(oceano_client_class):
+    """OceanoClient implements every method required by MediaPlayer."""
+    client = oceano_client_class('/tmp/shairport-sync-metadata')
 
     assert callable(getattr(client, 'connect', None))
     assert callable(getattr(client, 'receive_message', None))
@@ -109,8 +105,8 @@ def test_concrete_subclass_with_all_methods_can_be_instantiated(media_player_cla
 # detect_media_player() factory tests
 # ---------------------------------------------------------------------------
 
-def _load_detect_function(monkeypatch, mock_ws_module):
-    """Helper: inject websocket mock and return detect_media_player function with Config.
+def _load_detect_function():
+    """Import detect_media_player and a fresh Config instance.
 
     The config is instantiated at runtime in main(), so we need to create a Config
     object here and pass it to detect_media_player(cfg).
@@ -118,13 +114,10 @@ def _load_detect_function(monkeypatch, mock_ws_module):
     Returns:
         A tuple of (detect_media_player_function, Config_object)
     """
-    monkeypatch.setitem(sys.modules, 'websocket', mock_ws_module)
     for mod in (
-        'media_players.volumio',
-        'media_players.moode',
-        'media_players.picore',
+        'media_players.oceano',
         'config',
-        'spi_now_playing',
+        'oceano_now_playing',
         'app.main',
     ):
         sys.modules.pop(mod, None)
@@ -140,8 +133,8 @@ def _load_detect_function(monkeypatch, mock_ws_module):
     
     # Now import the main module
     spec = importlib.util.spec_from_file_location(
-        'spi_now_playing',
-        os.path.join(os.path.dirname(__file__), '..', 'src', 'spi-now-playing.py')
+        'oceano_now_playing',
+        os.path.join(os.path.dirname(__file__), '..', 'src', 'oceano-now-playing.py')
     )
     main_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(main_module)
@@ -152,184 +145,39 @@ def _load_detect_function(monkeypatch, mock_ws_module):
     return main_module.detect_media_player, cfg
 
 
-def _load_detect_components(monkeypatch, mock_ws_module):
-    """Helper variant that also returns the imported app.main module."""
-    monkeypatch.setitem(sys.modules, 'websocket', mock_ws_module)
-    for mod in (
-        'media_players.volumio',
-        'media_players.moode',
-        'media_players.picore',
-        'media_players.oceano',
-        'config',
-        'spi_now_playing',
-        'app.main',
-    ):
-        sys.modules.pop(mod, None)
-
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        'config',
-        os.path.join(os.path.dirname(__file__), '..', 'src', 'config.py')
-    )
-    config_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config_module)
-
-    spec = importlib.util.spec_from_file_location(
-        'spi_now_playing',
-        os.path.join(os.path.dirname(__file__), '..', 'src', 'spi-now-playing.py')
-    )
-    main_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(main_module)
-
-    cfg = config_module.Config()
-    app_main_module = sys.modules['app.main']
-    return main_module.detect_media_player, cfg, app_main_module
-
-
-def test_detect_media_player_default_returns_volumio(monkeypatch):
-    """detect_media_player() returns a VolumioClient when MEDIA_PLAYER is unset."""
+def test_detect_media_player_default_returns_oceano(monkeypatch):
+    """detect_media_player() returns an OceanoClient when MEDIA_PLAYER is unset."""
     monkeypatch.delenv('MEDIA_PLAYER', raising=False)
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    mock_ws_module.create_connection = MagicMock()
-    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from media_players.volumio import VolumioClient
-    player = fn(cfg)
-    assert isinstance(player, VolumioClient)
-
-
-def test_detect_media_player_volumio_explicit(monkeypatch):
-    """detect_media_player() returns a VolumioClient when MEDIA_PLAYER=volumio."""
-    monkeypatch.setenv('MEDIA_PLAYER', 'volumio')
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    mock_ws_module.create_connection = MagicMock()
-    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from media_players.volumio import VolumioClient
-    player = fn(cfg)
-    assert isinstance(player, VolumioClient)
-
-
-def test_detect_media_player_volumio_explicit_respects_external_artwork_flag(monkeypatch):
-    """Explicit Volumio mode must propagate EXTERNAL_ARTWORK_ENABLED config."""
-    monkeypatch.setenv('MEDIA_PLAYER', 'volumio')
-    monkeypatch.setenv('EXTERNAL_ARTWORK_ENABLED', 'false')
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    mock_ws_module.create_connection = MagicMock()
-    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from media_players.volumio import VolumioClient
-    player = fn(cfg)
-    assert isinstance(player, VolumioClient)
-    assert player.external_artwork_enabled is False
-
-
-def test_detect_media_player_moode(monkeypatch):
-    """detect_media_player() returns a MoodeClient when MEDIA_PLAYER=moode."""
-    monkeypatch.setenv('MEDIA_PLAYER', 'moode')
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from media_players.moode import MoodeClient
-    player = fn(cfg)
-    assert isinstance(player, MoodeClient)
-
-
-def test_detect_media_player_picore(monkeypatch):
-    """detect_media_player() returns a PiCorePlayerClient when MEDIA_PLAYER=picore."""
-    monkeypatch.setenv('MEDIA_PLAYER', 'picore')
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from media_players.picore import PiCorePlayerClient
-    player = fn(cfg)
-    assert isinstance(player, PiCorePlayerClient)
-
-
-def test_detect_media_player_oceano(monkeypatch):
-    """detect_media_player() returns an OceanoClient when MEDIA_PLAYER=oceano."""
-    monkeypatch.setenv('MEDIA_PLAYER', 'oceano')
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
+    fn, cfg = _load_detect_function()
     from media_players.oceano import OceanoClient
     player = fn(cfg)
     assert isinstance(player, OceanoClient)
 
 
-def test_detect_media_player_auto_detects_volumio(monkeypatch):
-    """detect_media_player() auto-detects Volumio when MEDIA_PLAYER=auto."""
-    monkeypatch.setenv('MEDIA_PLAYER', 'auto')
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    # Mock successful connection for Volumio
-    mock_ws_module.create_connection = MagicMock(return_value=MagicMock())
-    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from media_players.volumio import VolumioClient
+def test_detect_media_player_oceano_explicit(monkeypatch):
+    """detect_media_player() returns an OceanoClient when MEDIA_PLAYER=oceano."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'oceano')
+    fn, cfg = _load_detect_function()
+    from media_players.oceano import OceanoClient
     player = fn(cfg)
-    # Should auto-detect and return Volumio
-    assert isinstance(player, VolumioClient)
+    assert isinstance(player, OceanoClient)
 
 
-def test_detect_media_player_auto_falls_back_to_volumio_on_failure(monkeypatch):
-    """detect_media_player() falls back to Volumio if all probes fail (MEDIA_PLAYER=auto)."""
-    monkeypatch.setenv('MEDIA_PLAYER', 'auto')
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    # Mock all connections fail
-    mock_ws_module.create_connection = MagicMock(side_effect=Exception("All unavailable"))
-    fn, cfg = _load_detect_function(monkeypatch, mock_ws_module)
-    from media_players.volumio import VolumioClient
+def test_detect_media_player_respects_external_artwork_flag(monkeypatch):
+    """Explicit Oceano mode must propagate EXTERNAL_ARTWORK_ENABLED config."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'oceano')
+    monkeypatch.setenv('EXTERNAL_ARTWORK_ENABLED', 'false')
+    fn, cfg = _load_detect_function()
+    from media_players.oceano import OceanoClient
     player = fn(cfg)
-    # Should fall back to Volumio even when detection fails
-    assert isinstance(player, VolumioClient)
+    assert isinstance(player, OceanoClient)
+    assert player.external_artwork_enabled is False
 
 
-def test_detect_media_player_auto_skips_inactive_oceano(monkeypatch):
-    """Auto mode should not select Oceano when pipe exists but emits no active events."""
-    monkeypatch.setenv('MEDIA_PLAYER', 'auto')
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    mock_ws_module.create_connection = MagicMock(side_effect=Exception("Volumio unavailable"))
-
-    fn, cfg, main_module = _load_detect_components(monkeypatch, mock_ws_module)
-
-    monkeypatch.setattr(
-        main_module,
-        '_connect_with_timeout',
-        lambda client, timeout=3.0: isinstance(client, main_module.OceanoClient),
-    )
-    monkeypatch.setattr(
-        main_module,
-        '_oceano_probe_has_activity',
-        lambda client, timeout=0.75: False,
-    )
-
-    from media_players.volumio import VolumioClient
-    player = fn(cfg)
-    assert isinstance(player, VolumioClient)
-
-
-def test_detect_media_player_auto_detects_active_oceano(monkeypatch):
-    """Auto mode should select Oceano when an active stream is detected."""
-    monkeypatch.setenv('MEDIA_PLAYER', 'auto')
-    mock_ws_module = MagicMock()
-    mock_ws_module.WebSocketException = Exception
-    mock_ws_module.create_connection = MagicMock(side_effect=Exception("Volumio unavailable"))
-
-    fn, cfg, main_module = _load_detect_components(monkeypatch, mock_ws_module)
-
-    monkeypatch.setattr(
-        main_module,
-        '_connect_with_timeout',
-        lambda client, timeout=3.0: isinstance(client, main_module.OceanoClient),
-    )
-    monkeypatch.setattr(
-        main_module,
-        '_oceano_probe_has_activity',
-        lambda client, timeout=0.75: True,
-    )
-
+def test_detect_media_player_coerces_legacy_backend_values(monkeypatch):
+    """Legacy backend values are coerced to Oceano during migration."""
+    monkeypatch.setenv('MEDIA_PLAYER', 'volumio')
+    fn, cfg = _load_detect_function()
     from media_players.oceano import OceanoClient
     player = fn(cfg)
     assert isinstance(player, OceanoClient)

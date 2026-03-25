@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# SPI Now Playing - Reliable Update Script
+# Oceano Now Playing - Reliable Update Script
 # Stops service, pulls from git, and restarts. Rolls back on failure.
 set -e
 
-SERVICE_NAME="spi-now-playing.service"
+SERVICE_NAME="oceano-now-playing.service"
 BACKUP_COMMIT=$(git rev-parse HEAD)
 
 echo "--- Starting Reliable Update ---"

@@ -1,6 +1,12 @@
-# SPI Now Playing for Volumio
+# Oceano Now Playing
 
-This project displays Volumio's current playing status (title, artist, album, art, and quality) on an SPI-connected display using the Linux framebuffer (`/dev/fb0`). Optimized for Raspberry Pi 5.
+This fork displays Oceano Player now-playing metadata (title, artist, album, art, and playback details) on an SPI-connected display using the Linux framebuffer (`/dev/fb0`). It is optimized for Raspberry Pi 5 and is intentionally focused on Oceano-only metadata from `shairport-sync`.
+
+Current migration note:
+
+- This fork is being simplified to Oceano-only.
+- Legacy service names and some scripts may still reference `spi-now-playing` during the transition.
+- Runtime selection of Volumio, MoOde, and piCorePlayer is no longer part of the target architecture.
 
 ## Development Quick Start
 
@@ -35,7 +41,7 @@ If `make test` fails with `ModuleNotFoundError` for packages like `requests` or 
 
 - **Raspberry Pi 5** running Raspberry Pi OS or Volumio.
 - **SPI Display** correctly configured and visible as `/dev/fb0`.
-- **Volumio** running on the same Pi (localhost:3000).
+- **oceano-player** or a compatible `shairport-sync` setup producing metadata at `/tmp/shairport-sync-metadata`.
 
 ## Installation
 
@@ -98,10 +104,7 @@ You can customize the behavior in `src/config.py` or by setting environment vari
 | `UI_PRESET` | `high_contrast_rotate` | Environment variable or edit `Config.ui_preset` |
 | `LAYOUT_PROFILE` | from `UI_PRESET` | Optional explicit override: `high_contrast` or `classic` |
 | `DISPLAY_MODE` | from `UI_PRESET` | Optional explicit override: `rotate`, `text`, `artwork`, or `hybrid` |
-| `MEDIA_PLAYER` | `auto` | Environment variable or edit `Config.media_player_type` (`auto`, `volumio`, `moode`, `picore`, `oceano`) |
-| `VOLUMIO_URL` | `ws://localhost:3000/socket.io/?EIO=3&transport=websocket` | Environment variable or edit `Config.volumio_url` |
-| `MOODE_URL` | `http://localhost/engine-mpd.php` | Environment variable or edit `Config.moode_url` |
-| `LMS_URL` | `ws://localhost:9000` | Environment variable or edit `Config.lms_url` |
+| `MEDIA_PLAYER` | `oceano` | Environment variable or edit `Config.media_player_type` (legacy values are coerced to `oceano`) |
 | `OCEANO_METADATA_PIPE` | `/tmp/shairport-sync-metadata` | Environment variable or edit `Config.oceano_metadata_pipe` |
 | `EXTERNAL_ARTWORK_ENABLED` | `true` | Environment variable using `true/false`, `on/off`, `yes/no`, or `1/0` |
 | `CYCLE_TIME` | `30` | Environment variable or edit `Config.mode_cycle_time` |
@@ -109,9 +112,9 @@ You can customize the behavior in `src/config.py` or by setting environment vari
 
 Notes:
 
-- `MEDIA_PLAYER=auto` tries to detect the active backend automatically.
-- In auto mode, `oceano` is selected only when an active metadata stream is observed (not just when the FIFO exists).
-- `MEDIA_PLAYER=oceano` reads now-playing metadata directly from `shairport-sync` metadata pipe.
+- `MEDIA_PLAYER=oceano` is the only supported runtime mode in this fork.
+- Legacy values such as `volumio`, `moode`, `picore`, or `auto` are coerced to `oceano` to ease migration.
+- `OCEANO_METADATA_PIPE` reads now-playing metadata directly from the `shairport-sync` metadata pipe.
 - `UI_PRESET` is the recommended single control because it keeps style and mode connected.
 - Supported presets: `high_contrast_rotate`, `high_contrast_text`, `high_contrast_artwork`, `high_contrast_hybrid`, `classic_rotate`, `classic_text`, `classic_artwork`, `classic_hybrid`.
 - `LAYOUT_PROFILE` and `DISPLAY_MODE` can still be used as explicit overrides when needed.
@@ -127,7 +130,7 @@ Notes:
 To change these via the service, edit `/etc/systemd/system/spi-now-playing.service` and add entries under `[Service]`, for example:
 
 ```ini
-Environment="MEDIA_PLAYER=auto"
+Environment="MEDIA_PLAYER=oceano"
 Environment="OCEANO_METADATA_PIPE=/tmp/shairport-sync-metadata"
 Environment="UI_PRESET=high_contrast_rotate"
 Environment="CYCLE_TIME=45"

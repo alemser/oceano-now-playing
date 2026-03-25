@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# SPI Now Playing - Installation Script for Raspberry Pi 5
+# Oceano Now Playing - Installation Script for Raspberry Pi 5
 set -e
 
-echo "--- Installing SPI Now Playing ---"
+echo "--- Installing Oceano Now Playing ---"
 
 # 1. Update and Install System Dependencies
 echo "Installing system dependencies..."
@@ -27,19 +27,19 @@ pip install -r requirements.txt
 
 # 3. Setup Systemd Service
 echo "Creating systemd service..."
-SERVICE_PATH="/etc/systemd/system/spi-now-playing.service"
+SERVICE_PATH="/etc/systemd/system/oceano-now-playing.service"
 WORKING_DIR=$(pwd)
 USER_NAME=$(whoami)
 
 cat <<EOF | sudo tee $SERVICE_PATH
 [Unit]
-Description=SPI Now Playing Display for Volumio
-After=network-online.target volumio.service
+Description=Oceano Now Playing Display
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=${WORKING_DIR}/venv/bin/python ${WORKING_DIR}/src/spi-now-playing.py
+ExecStart=${WORKING_DIR}/venv/bin/python ${WORKING_DIR}/src/oceano-now-playing.py
 WorkingDirectory=${WORKING_DIR}
 StandardOutput=journal
 StandardError=journal
@@ -58,9 +58,9 @@ EOF
 # 4. Finalize and Start Service
 echo "Reloading systemd and starting service..."
 sudo systemctl daemon-reload
-sudo systemctl enable spi-now-playing.service
-sudo systemctl start spi-now-playing.service
+sudo systemctl enable oceano-now-playing.service
+sudo systemctl start oceano-now-playing.service
 
 echo "--- Installation Complete! ---"
-echo "You can check the service status with: sudo systemctl status spi-now-playing.service"
-echo "Or view logs with: journalctl -u spi-now-playing.service -f"
+echo "You can check the service status with: sudo systemctl status oceano-now-playing.service"
+echo "Or view logs with: journalctl -u oceano-now-playing.service -f"
