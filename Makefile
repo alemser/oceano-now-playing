@@ -35,7 +35,7 @@ push:
 
 install-hooks:
 	@echo "Setting up git hooks..."
-	cp .githooks/pre-push .git/hooks/pre-push
-	chmod +x .git/hooks/pre-push
+	git config core.hooksPath .githooks
+	chmod +x .githooks/pre-push
 	@echo "✅ Git hooks installed!"
 	@echo "Tests will now run automatically before each push."

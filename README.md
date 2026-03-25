@@ -2,6 +2,10 @@
 
 Displays now-playing metadata (title, artist, album, artwork, and playback details) on an SPI-connected display using the Linux framebuffer (`/dev/fb0`). Designed for Raspberry Pi 5 and integrated with [oceano-player](https://github.com/alemser/oceano-player) via the `shairport-sync` metadata pipe.
 
+> This project was specifically designed for the Raspberry Pi (tested on version 5). It aims to address the limitations of using cheap and simple SPI displays, which often cause compatibility issues with software like Volumio and Moode. It addresses the author's basic needs, and he hopes it proves useful for others in the same situation.
+
+>It requires [Oceano Player](https://github.com/alemser/oceano-player) to be installed first.
+
 ## How it works
 
 `oceano-now-playing` reads AirPlay metadata that `shairport-sync` writes to a named FIFO (default: `/tmp/shairport-sync-metadata`). It decodes the metadata, resolves album artwork, and drives a framebuffer display in real time.
@@ -39,6 +43,9 @@ make test
 - Optionally, [oceano-player](https://github.com/alemser/oceano-player) managing shairport-sync.
 
 ## Installation
+
+> It requires [Oceano Player](https://github.com/alemser/oceano-player) to be installed first.
+
 
 ### 1. Enable SPI Display Framebuffer
 

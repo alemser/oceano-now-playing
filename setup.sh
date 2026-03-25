@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Setup script for spi-now-playing development environment
+# Setup script for oceano-now-playing development environment
 # Installs dependencies and configures git hooks
 
 set -e  # Exit on any error
 
-echo "🔧 Setting up spi-now-playing development environment..."
+echo "🔧 Setting up oceano-now-playing development environment..."
 echo ""
 
 if [ -d ".venv" ] && [ ! -d "venv" ]; then
@@ -57,9 +57,9 @@ echo ""
 
 # Install git hooks
 echo "Installing git hooks..."
-cp .githooks/pre-push .git/hooks/pre-push
-chmod +x .git/hooks/pre-push
-echo "✅ Pre-push hook installed from .githooks/pre-push"
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-push
+echo "✅ Git hooks configured via core.hooksPath=.githooks"
 echo ""
 
 echo "================================="
