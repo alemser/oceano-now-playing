@@ -6,13 +6,27 @@ This document explains the automated testing and pre-push verification system.
 
 ### First Time Setup
 ```bash
+chmod +x setup.sh
 ./setup.sh
+source venv/bin/activate
+make test
 ```
 
 This will:
-- Create a Python virtual environment
+- Create the project Python virtual environment at `venv`
 - Install all dependencies (including pytest)
 - Configure git pre-push hook
+
+Before running any test command, make sure you are using the project environment:
+
+```bash
+source venv/bin/activate
+which python3
+```
+
+The `python3` path should point into `.../spi-now-playing/venv/...`.
+
+Do not use `.venv` for this repository unless you also install the full project dependencies there. The default project workflow and scripts use `venv`.
 
 ### Running Tests
 
@@ -53,10 +67,11 @@ Runs tests first. If all pass, pushes to GitHub.
 
 Located at `.git/hooks/pre-push`, this script runs automatically before any push to GitHub:
 
-1. Checks if pytest is installed
-2. Runs all tests
-3. **Blocks the push if any test fails**
-4. Shows you which tests failed so you can fix them
+1. Selects the repository Python environment, preferring `venv`, then `.venv`
+2. Checks if pytest is installed for that interpreter
+3. Runs all tests
+4. **Blocks the push if any test fails**
+5. Shows you which tests failed so you can fix them
 
 **This prevents broken code from reaching GitHub!**
 
@@ -127,7 +142,7 @@ For the pre-push hook to work on the Raspberry Pi, you need pytest installed:
 # Option 1: Virtual environment (Recommended)
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 
 # Option 2: System-wide (not recommended)
 pip3 install pytest pytest-mock
@@ -161,13 +176,16 @@ This would be a Priority 2+ enhancement.
 
 The hook doesn't have pytest installed. Fix with:
 ```bash
-pip install pytest pytest-mock
+source venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 Or run setup.sh:
 ```bash
 ./setup.sh
 ```
+
+If that still fails, verify you did not activate `.venv` by mistake.
 
 ### Pre-push hook isn't running
 
@@ -186,6 +204,8 @@ Or reinstall hooks:
 ```bash
 make install-hooks
 ```
+
+The repository-managed hook source lives at `.githooks/pre-push` and is copied into `.git/hooks/pre-push` by `./setup.sh` and `make install-hooks`.
 
 ### My test environment is different than the Pi
 
@@ -209,7 +229,7 @@ pytest tests/ -v
 
 - ✅ **Pre-push hook** blocks bad code from reaching GitHub
 - ✅ **Makefile** provides convenient test commands
-- ✅ **40+ tests** cover critical functionality
+- ✅ **Current test suite** covers critical functionality
 - ✅ **One-change-at-a-time** workflow prevents regressions
 - ✅ **setup.sh** automates initial setup
 

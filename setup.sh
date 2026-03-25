@@ -8,6 +8,20 @@ set -e  # Exit on any error
 echo "🔧 Setting up spi-now-playing development environment..."
 echo ""
 
+if [ -d ".venv" ] && [ ! -d "venv" ]; then
+    echo "⚠️  Found .venv in this repository."
+    echo "⚠️  The documented development workflow for this project uses ./venv."
+    echo "⚠️  setup.sh will create and use ./venv so project scripts and docs stay consistent."
+    echo ""
+fi
+
+if [ -d ".venv" ] && [ -d "venv" ]; then
+    echo "⚠️  Found both .venv and venv."
+    echo "⚠️  Use 'source venv/bin/activate' before running make test or pushing changes."
+    echo "⚠️  In VS Code, select venv/bin/python for this workspace."
+    echo ""
+fi
+
 # Check Python version
 echo "Checking Python version..."
 if ! command -v python3 &> /dev/null; then
@@ -31,6 +45,7 @@ fi
 # Activate virtual environment
 source venv/bin/activate
 echo "✅ Virtual environment activated"
+echo "✅ Using interpreter: $(pwd)/venv/bin/python"
 echo ""
 
 # Install dependencies
@@ -42,8 +57,9 @@ echo ""
 
 # Install git hooks
 echo "Installing git hooks..."
+cp .githooks/pre-push .git/hooks/pre-push
 chmod +x .git/hooks/pre-push
-echo "✅ Pre-push hook installed"
+echo "✅ Pre-push hook installed from .githooks/pre-push"
 echo ""
 
 echo "================================="
@@ -53,6 +69,8 @@ echo ""
 echo "Next steps:"
 echo "1. Activate the virtual environment:"
 echo "   source venv/bin/activate"
+echo ""
+echo "   In VS Code, select: venv/bin/python"
 echo ""
 echo "2. Run tests anytime:"
 echo "   make test"

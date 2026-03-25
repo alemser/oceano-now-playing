@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set -e
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+cd "$REPO_ROOT"
+
+echo "🧪 Running tests before push..."
+echo ""
+
+if [ -x "$REPO_ROOT/venv/bin/python" ]; then
+    PYTHON="$REPO_ROOT/venv/bin/python"
+elif [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+    PYTHON="$REPO_ROOT/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON=$(command -v python3)
+else
+    echo "❌ Python 3 not found."
+    echo "Run ./setup.sh before pushing changes."
+    exit 1
+fi
+
+echo "Using Python: $PYTHON"
+
+if ! "$PYTHON" -m pytest --version >/dev/null 2>&1; then
+    echo "❌ pytest is not installed for this interpreter."
+    echo "Run ./setup.sh or install requirements into the project virtual environment."
+    exit 1
+fi
+
+"$PYTHON" -m pytest tests/ -v --tb=short
+
+echo ""
+echo "✅ All tests passed!"
+echo "Proceeding with push..."

@@ -20,6 +20,27 @@ source venv/bin/activate
 make test
 ```
 
+Expected result after a clean setup:
+
+- The project test suite passes from the repository root.
+- Your shell prompt shows the active environment as `venv`.
+- VS Code is configured to use `venv/bin/python` for this workspace.
+
+## Before You Start Development
+
+Do these checks before editing code:
+
+1. Run `pwd` from the repository root.
+2. Activate the project environment with `source venv/bin/activate`.
+3. Confirm `which python3` points into `.../spi-now-playing/venv/...`.
+4. Run `make test` and make sure the current suite passes before making changes.
+
+Important:
+
+- This project uses `venv` as the canonical development environment.
+- Do not mix `venv` and `.venv` in the same checkout. VS Code can easily pick `.venv` by mistake, which leads to missing-package test failures.
+- If both directories exist, either remove `.venv` or explicitly select `venv/bin/python` in VS Code.
+
 ## Development Environment Setup
 
 ### Prerequisites
@@ -54,7 +75,7 @@ make test
    ```bash
    make test
    ```
-   You should see: **55 passed**
+   You should see the current full test suite pass.
 
 ## Available Commands
 
@@ -162,8 +183,14 @@ source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
+If you also have `.venv`, remove it or switch VS Code back to `venv/bin/python` before rerunning tests.
+
 ### Module Not Found Errors
 ```bash
+# Confirm you are in the project environment
+source venv/bin/activate
+which python3
+
 # Ensure pytest can find src/
 python3 -m pytest tests/ -v
 ```

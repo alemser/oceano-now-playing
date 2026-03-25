@@ -2,6 +2,35 @@
 
 This project displays Volumio's current playing status (title, artist, album, art, and quality) on an SPI-connected display using the Linux framebuffer (`/dev/fb0`). Optimized for Raspberry Pi 5.
 
+## Development Quick Start
+
+If you want to clone the project and start development locally, use this exact flow from the project root:
+
+```bash
+git clone https://github.com/alemser/spi-now-playing.git
+cd spi-now-playing
+chmod +x setup.sh
+./setup.sh
+source venv/bin/activate
+make test
+```
+
+Before you start coding:
+
+- Use the project's `venv` directory for development. The repo scripts and docs assume `venv`, not `.venv`.
+- If you already have a `.venv` in this folder, deactivate it before working on this project or remove it to avoid using the wrong interpreter.
+- In VS Code, select `venv/bin/python` as the Python interpreter for this workspace.
+- Run `make test` once after setup. Development should start from a passing test run.
+
+What `./setup.sh` does:
+
+- Creates `venv` if it does not exist.
+- Installs runtime dependencies from `requirements.txt`.
+- Installs development dependencies from `requirements-dev.txt`.
+- Installs the Git pre-push hook.
+
+If `make test` fails with `ModuleNotFoundError` for packages like `requests` or `PIL`, you are almost certainly not using the project `venv`.
+
 ## Prerequisites
 
 - **Raspberry Pi 5** running Raspberry Pi OS or Volumio.
