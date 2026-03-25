@@ -57,6 +57,14 @@ class MediaPlayer(ABC):
         """Close the connection gracefully."""
         ...
 
+    def get_state(self) -> None:
+        """Optional state refresh hook for compatibility with main loop.
+
+        Backends with push/stream semantics (like Oceano FIFO) can keep this
+        as a no-op, while polling/request backends can override it.
+        """
+        return None
+
     def _resolved_artwork(self, cache_key: str, image, source: str) -> dict:
         """Build a renderer-friendly artwork payload."""
         return {
