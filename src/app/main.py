@@ -352,7 +352,6 @@ def main():
     config.log_config()
 
     logger.info("SPI Now Playing - Starting...")
-    logger.info("Waiting for system to stabilize...")
     time.sleep(3)
 
     renderer = Renderer(
@@ -379,6 +378,7 @@ def main():
             if not player.connect():
                 time.sleep(5)
                 continue
+            logger.info(f"Connected to {config.media_player_type}.")
 
             player.get_state()
             last_sync_time = time.time()
@@ -478,14 +478,14 @@ def main():
                 if last_state.get('status') != 'play':
                     if now - last_active_time > config.standby_timeout:
                         if not is_sleeping:
-                            logger.info(f"Inactive for {config.standby_timeout}s. Entering standby.")
+                            logger.debug(f"Inactive for {config.standby_timeout}s. Entering standby.")
                             renderer.clear()
                             is_sleeping = True
                             is_showing_idle = False
                         continue
 
                     if not is_showing_idle and not is_sleeping:
-                        logger.info(f"Player {last_state.get('status')}. Showing idle screen.")
+                        logger.debug(f"Player {last_state.get('status')}. Showing idle screen.")
                         renderer.render_idle_screen()
                         is_showing_idle = True
                     continue

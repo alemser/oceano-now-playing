@@ -251,7 +251,7 @@ class Renderer:
         f_sub = self.get_font(16)
         
         text1 = "SPI NOW PLAYING"
-        text2 = "Waiting for Volumio..."
+        text2 = "Waiting..."
         
         bbox1 = draw.textbbox((0, 0), text1, font=f_logo)
         w1 = bbox1[2] - bbox1[0]
