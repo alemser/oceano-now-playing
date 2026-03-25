@@ -250,8 +250,8 @@ class Renderer:
         f_logo = self.get_font(28, bold=True)
         f_sub = self.get_font(16)
         
-        text1 = "SPI NOW PLAYING"
-        text2 = "Waiting..."
+        text1 = "Oceano Player"
+        text2 = "Waiting for media..."
         
         bbox1 = draw.textbbox((0, 0), text1, font=f_logo)
         w1 = bbox1[2] - bbox1[0]
