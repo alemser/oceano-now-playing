@@ -62,8 +62,8 @@ def should_resolve_artwork(
 
     Notes:
         artwork_changed is intentionally ignored in provider-only mode because
-        Volumio's raw albumart field can fluctuate while track metadata stays
-        the same, which would otherwise cause redundant fallback lookups.
+        the raw albumart field can fluctuate while track metadata stays steady,
+        which would otherwise cause redundant fallback lookups.
     """
     if is_new_song:
         return True

@@ -209,30 +209,30 @@ class TestStatesAreEqual:
 class TestPlaybackStateTransitions:
     """Test state machine transitions."""
     
-    def test_idle_to_playing(self, volumio_state_stopped, volumio_state_playing):
+    def test_idle_to_playing(self, oceano_state_stopped, oceano_state_playing):
         """Test transition from idle/stopped to playing."""
         # Stopped state
-        assert states_are_equal(volumio_state_stopped, volumio_state_stopped) is True
+        assert states_are_equal(oceano_state_stopped, oceano_state_stopped) is True
         
         # New playing state is different
-        assert states_are_equal(volumio_state_stopped, volumio_state_playing) is False
+        assert states_are_equal(oceano_state_stopped, oceano_state_playing) is False
     
-    def test_playing_to_paused(self, volumio_state_playing, volumio_state_paused):
+    def test_playing_to_paused(self, oceano_state_playing, oceano_state_paused):
         """Test transition from playing to paused.
         
         This is critical: pause causes status change, which must trigger re-render
         and NOT show a black screen.
         """
         # Playing and paused states are different (status changed)
-        assert states_are_equal(volumio_state_playing, volumio_state_paused) is False
+        assert states_are_equal(oceano_state_playing, oceano_state_paused) is False
     
-    def test_paused_to_playing(self, volumio_state_paused, volumio_state_playing):
+    def test_paused_to_playing(self, oceano_state_paused, oceano_state_playing):
         """Test transition from paused back to playing."""
-        assert states_are_equal(volumio_state_paused, volumio_state_playing) is False
+        assert states_are_equal(oceano_state_paused, oceano_state_playing) is False
     
-    def test_playing_to_stopped(self, volumio_state_playing, volumio_state_stopped):
+    def test_playing_to_stopped(self, oceano_state_playing, oceano_state_stopped):
         """Test transition from playing to stopped."""
-        assert states_are_equal(volumio_state_playing, volumio_state_stopped) is False
+        assert states_are_equal(oceano_state_playing, oceano_state_stopped) is False
 
 
 class TestReconnectPolicy:
@@ -260,13 +260,13 @@ class TestReconnectPolicy:
 class TestAirPlayHandling:
     """Test AirPlay streaming edge cases."""
     
-    def test_airplay_none_seek_duration(self, volumio_state_airplay):
+    def test_airplay_none_seek_duration(self, oceano_state_airplay):
         """Test that None seek/duration are safely handled.
         
         Critical: AirPlay doesn't provide seek/duration values.
         The app must not crash when converting None to int.
         """
-        state = volumio_state_airplay
+        state = oceano_state_airplay
         
         # These should not raise exceptions
         seek = state.get('seek') or 0
@@ -275,13 +275,13 @@ class TestAirPlayHandling:
         assert seek == 0
         assert duration == 0
     
-    def test_normal_track_vs_airplay(self, volumio_state_playing, volumio_state_airplay):
+    def test_normal_track_vs_airplay(self, oceano_state_playing, oceano_state_airplay):
         """Test difference detection between normal track and AirPlay."""
         # Both have the same title/artist, but different track metadata
         # They should be considered different for state comparison
         # (In real app, AirPlay wouldn't have advance metadata anyway)
         
-        assert states_are_equal(volumio_state_playing, volumio_state_airplay) is False
+        assert states_are_equal(oceano_state_playing, oceano_state_airplay) is False
 
 
 class TestSeekInterpolation:
@@ -417,7 +417,7 @@ class TestArtworkResolvePolicy:
         assert should_resolve_artwork(
             is_new_song=True,
             artwork_changed=False,
-            previous_resolved_artwork={'source': 'volumio'},
+            previous_resolved_artwork={'source': 'oceano'},
             previous_artwork_resolve_time=123.0,
             now=130.0,
         ) is True
@@ -427,7 +427,7 @@ class TestArtworkResolvePolicy:
         assert should_resolve_artwork(
             is_new_song=False,
             artwork_changed=True,
-            previous_resolved_artwork={'source': 'volumio'},
+            previous_resolved_artwork={'source': 'oceano'},
             previous_artwork_resolve_time=123.0,
             now=130.0,
         ) is False
@@ -444,12 +444,12 @@ class TestArtworkResolvePolicy:
         ) is False
 
     def test_no_retry_for_legacy_placeholder_artwork(self):
-        """Legacy volumio-placeholder source should not trigger retries anymore."""
+        """Unknown/placeholder artwork sources should not trigger retries."""
         now = 1000.0
         assert should_resolve_artwork(
             is_new_song=False,
             artwork_changed=False,
-            previous_resolved_artwork={'source': 'volumio-placeholder'},
+            previous_resolved_artwork={'source': 'placeholder'},
             previous_artwork_resolve_time=now - ARTWORK_RETRY_INTERVAL_SECONDS,
             now=now,
         ) is False
@@ -483,7 +483,7 @@ class TestArtworkResolvePolicy:
         assert should_resolve_artwork(
             is_new_song=False,
             artwork_changed=False,
-            previous_resolved_artwork={'source': 'volumio'},
+            previous_resolved_artwork={'source': 'oceano'},
             previous_artwork_resolve_time=now - 1000.0,
             now=now,
         ) is False

@@ -87,7 +87,7 @@ class Renderer:
         self.art_size = 320
         self.art_x, self.art_y = 10, 0
         
-        # Default accent color (Volumio green)
+        # Default accent color
         self.default_accent = (60, 180, 60)
         
         # Try to open the framebuffer once

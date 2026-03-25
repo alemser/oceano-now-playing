@@ -1,8 +1,7 @@
-"""Abstract base class for media player OS integrations.
+"""Abstract base class for the media player integration layer.
 
-Defines the interface that all media player implementations must follow,
-allowing the state machine and renderer to remain agnostic of the
-underlying media OS (Volumio, MoOde, PiCorePlayer, etc.).
+Defines the interface that OceanoClient must follow, keeping the state
+machine and renderer decoupled from the metadata transport layer.
 """
 
 from abc import ABC, abstractmethod
@@ -15,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 class MediaPlayer(ABC):
-    """Interface for media player OS integrations.
+    """Interface for the metadata transport layer.
 
-    Concrete implementations must provide connection management and
-    message reception so the main event loop can remain unchanged
-    when a new media OS is introduced.
+    Concrete implementations provide connection management and message
+    reception so the main event loop is decoupled from the underlying
+    metadata source.
     """
 
     @abstractmethod
@@ -57,18 +56,6 @@ class MediaPlayer(ABC):
     def close(self) -> None:
         """Close the connection gracefully."""
         ...
-
-    def get_state(self) -> None:
-        """Request a state update from the media player (optional).
-
-        Some media players (e.g., Volumio) benefit from explicit state
-        requests periodically. Others (e.g., MoOde) handle state updates
-        passively via polling and don't need this.
-
-        Concrete subclasses can override to request state if applicable.
-        Default implementation is a safe no-op.
-        """
-        pass
 
     def _resolved_artwork(self, cache_key: str, image, source: str) -> dict:
         """Build a renderer-friendly artwork payload."""
