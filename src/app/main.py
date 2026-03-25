@@ -256,10 +256,24 @@ def main():
                     is_new_song = False
                     artwork_identity_is_new = artwork_identity_changed(new_data, last_state)
                     metadata_upgraded = metadata_became_meaningful(new_data, last_state)
-                    if not last_state:
-                        is_new_song = True
-                    elif new_data.get('title') != last_state.get('title') or new_data.get('artist') != last_state.get('artist'):
-                        is_new_song = True
+                    has_meaningful_track_metadata = (
+                        _is_meaningful_metadata_value(new_data.get('title'))
+                        and _is_meaningful_metadata_value(new_data.get('artist'))
+                    )
+                    has_meaningful_artwork_metadata = (
+                        _is_meaningful_metadata_value(new_data.get('artist'))
+                        and _is_meaningful_metadata_value(new_data.get('album'))
+                    )
+
+                    # Avoid treating placeholder play states as new songs.
+                    if has_meaningful_track_metadata:
+                        if not last_state:
+                            is_new_song = True
+                        elif (
+                            new_data.get('title') != last_state.get('title')
+                            or new_data.get('artist') != last_state.get('artist')
+                        ):
+                            is_new_song = True
 
                     previous_resolved_artwork = last_state.get('_resolved_artwork') if last_state else None
                     previous_artwork_resolve_time = (
@@ -274,7 +288,7 @@ def main():
                         now=now,
                         metadata_became_meaningful=metadata_upgraded,
                     ):
-                        if not has_backend_artwork(new_data):
+                        if not has_backend_artwork(new_data) and has_meaningful_artwork_metadata:
                             new_data['_resolved_artwork'] = player.resolve_artwork(
                                 new_data,
                                 timeout=ARTWORK_RESOLVE_TIMEOUT_SECONDS,
