@@ -3,14 +3,10 @@ import time
 import signal
 import sys
 import logging
-import threading
 
 from config import Config
 from media_players.base import MediaPlayer
-from media_players.moode import MoodeClient
 from media_players.oceano import OceanoClient
-from media_players.picore import PiCorePlayerClient
-from media_players.volumio import VolumioClient
 from renderer import Renderer
 
 # --- LOGGING CONFIGURATION ---
@@ -38,159 +34,18 @@ renderer = None
 player = None
 
 
-def _connect_with_timeout(client: MediaPlayer, timeout: float = 3.0) -> bool:
-    """Connect to a media player with enforced timeout."""
-    result = {"connected": False}
-
-    def connect_thread():
-        try:
-            result["connected"] = client.connect()
-        except Exception as e:
-            logger.debug(f"Connect thread exception: {e}")
-            result["connected"] = False
-
-    thread = threading.Thread(target=connect_thread, daemon=True)
-    thread.start()
-    thread.join(timeout=timeout)
-
-    if thread.is_alive():
-        logger.debug(f"Connect timed out after {timeout}s")
-        return False
-
-    return result["connected"]
-
-
-def _oceano_probe_has_activity(client: OceanoClient, timeout: float = 0.75) -> bool:
-    """Return True when Oceano emits a fresh metadata event during probe."""
-    try:
-        probe_state = client.receive_message(timeout=timeout)
-    except Exception as e:
-        logger.debug(f"Oceano activity probe failed: {e}")
-        return False
-
-    if not probe_state:
-        return False
-
-    # Accept only active playback updates to avoid false positives from stale pipe presence.
-    return probe_state.get("status") == "play"
-
-
-def auto_detect_media_player(cfg: Config) -> MediaPlayer:
-    """Auto-detect and instantiate the correct media player client."""
-    logger.info("Auto-detecting media player...")
-
-    candidates = [
-        (
-            'volumio',
-            cfg.volumio_url,
-            lambda url: VolumioClient(
-                url,
-                external_artwork_enabled=cfg.external_artwork_enabled,
-            ),
-        ),
-        ('moode', cfg.moode_url, MoodeClient),
-        (
-            'oceano',
-            cfg.oceano_metadata_pipe,
-            lambda pipe: OceanoClient(
-                pipe,
-                external_artwork_enabled=cfg.external_artwork_enabled,
-            ),
-        ),
-    ]
-
-    for name, url, client_factory in candidates:
-        try:
-            logger.info(f"Probing {name} at {url}...")
-            client = client_factory(url)
-
-            if _connect_with_timeout(client, timeout=3.0):
-                if isinstance(client, OceanoClient) and not _oceano_probe_has_activity(client):
-                    logger.info("✗ oceano connected but no active metadata stream detected")
-                    try:
-                        client.close()
-                    except Exception as close_error:
-                        logger.debug(f"Failed to close inactive oceano probe: {close_error}")
-                    continue
-
-                logger.info(f"✓ Auto-detected: {name.upper()} is running")
-
-                try:
-                    disconnect_fn = getattr(client, "disconnect", None)
-                    if callable(disconnect_fn):
-                        disconnect_fn()
-                    else:
-                        ws = getattr(client, "ws", None)
-                        if ws is not None:
-                            try:
-                                ws.close()
-                            finally:
-                                setattr(client, "ws", None)
-                except Exception as disconnect_error:
-                    logger.debug(
-                        f"Failed to close probe connection for {name}: "
-                        f"{disconnect_error}"
-                    )
-
-                return client
-            else:
-                logger.info(f"✗ {name} returned False (not running)")
-        except Exception as e:
-            logger.debug(f"✗ {name} probe failed: {e}")
-
-    logger.warning("No media player detected. Falling back to Volumio.")
-    return VolumioClient(
-        cfg.volumio_url,
-        external_artwork_enabled=cfg.external_artwork_enabled,
-    )
-
-
-def detect_media_player(cfg: Config) -> MediaPlayer:
-    """Detect and instantiate the correct media player client."""
-    player_type = cfg.media_player_type
-    logger.info(f"Media player type: '{player_type}'")
-
-    if player_type == 'auto':
-        client = auto_detect_media_player(cfg)
-
-        detected_type = None
-        if isinstance(client, VolumioClient):
-            detected_type = 'volumio'
-        elif isinstance(client, MoodeClient):
-            detected_type = 'moode'
-        elif isinstance(client, PiCorePlayerClient):
-            detected_type = 'picore'
-        elif isinstance(client, OceanoClient):
-            detected_type = 'oceano'
-
-        if detected_type is not None:
-            cfg.media_player_type = detected_type
-            logger.info(f"Auto-detected media player type: {detected_type}")
-        else:
-            logger.warning(
-                "Auto-detected media player client of unknown type; "
-                "leaving cfg.media_player_type as 'auto'."
-            )
-        return client
-
-    if player_type == 'moode':
-        logger.info(f"Using MoOde client at {cfg.moode_url}")
-        return MoodeClient(cfg.moode_url)
-
-    if player_type == 'picore':
-        logger.info(f"Using piCorePlayer client at {cfg.lms_url}")
-        return PiCorePlayerClient(cfg.lms_url)
-
-    if player_type == 'oceano':
-        logger.info(f"Using Oceano client at {cfg.oceano_metadata_pipe}")
-        return OceanoClient(
-            cfg.oceano_metadata_pipe,
-            external_artwork_enabled=cfg.external_artwork_enabled,
+def detect_media_player(cfg: Config) -> OceanoClient:
+    """Instantiate the Oceano metadata client used by this fork."""
+    if cfg.media_player_type != 'oceano':
+        logger.warning(
+            "Unsupported MEDIA_PLAYER '%s' in oceano-now-playing; forcing oceano.",
+            cfg.media_player_type,
         )
+        cfg.media_player_type = 'oceano'
 
-    logger.info(f"Using Volumio client at {cfg.volumio_url}")
-    return VolumioClient(
-        cfg.volumio_url,
+    logger.info(f"Using Oceano client at {cfg.oceano_metadata_pipe}")
+    return OceanoClient(
+        cfg.oceano_metadata_pipe,
         external_artwork_enabled=cfg.external_artwork_enabled,
     )
 

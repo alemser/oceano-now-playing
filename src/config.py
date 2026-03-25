@@ -45,9 +45,9 @@ def _parse_bool_env(var_name: str, default: bool) -> bool:
 class Config:
     """Application settings with environment variable overrides and validation.
     
-    Display hardware settings, media player type and URLs, and timing parameters
-    are all defined here with sensible defaults. Environment variables can override
-    any setting.
+    Display hardware settings, Oceano metadata input, and timing parameters are
+    all defined here with sensible defaults. Environment variables can override
+    any setting, but the runtime is intentionally restricted to Oceano-only.
     """
 
     # Display hardware
@@ -59,11 +59,8 @@ class Config:
     display_mode: str = "rotate"
     ui_preset: str = "high_contrast_rotate"
 
-    # Media player
-    media_player_type: str = "auto"
-    volumio_url: str = "ws://localhost:3000/socket.io/?EIO=3&transport=websocket"
-    moode_url: str = "http://localhost/engine-mpd.php"
-    lms_url: str = "ws://localhost:9000"
+    # Metadata source
+    media_player_type: str = "oceano"
     oceano_metadata_pipe: str = "/tmp/shairport-sync-metadata"
     external_artwork_enabled: bool = True
 
@@ -84,10 +81,7 @@ class Config:
         - UI_PRESET: combined style+mode preset (default: high_contrast_rotate)
         - LAYOUT_PROFILE: renderer layout profile (classic or high_contrast)
         - DISPLAY_MODE: rotate, text, artwork, or hybrid
-        - MEDIA_PLAYER: auto, volumio, moode, picore, or oceano (default: auto)
-        - VOLUMIO_URL: WebSocket URL for Volumio
-        - MOODE_URL: HTTP polling endpoint for MoOde (e.g., http://localhost/engine-mpd.php)
-        - LMS_URL: WebSocket URL for piCorePlayer/LMS
+        - MEDIA_PLAYER: oceano (legacy values are coerced to oceano)
         - OCEANO_METADATA_PIPE: shairport-sync metadata fifo path
         - EXTERNAL_ARTWORK_ENABLED: enable external artwork fallback lookups (default: true)
         - CYCLE_TIME: text/artwork mode cycle in seconds (default: 30)
@@ -119,9 +113,12 @@ class Config:
         self.media_player_type = os.getenv(
             "MEDIA_PLAYER", self.media_player_type
         ).lower()
-        self.volumio_url = os.getenv("VOLUMIO_URL", self.volumio_url)
-        self.moode_url = os.getenv("MOODE_URL", self.moode_url)
-        self.lms_url = os.getenv("LMS_URL", self.lms_url)
+        if self.media_player_type != "oceano":
+            logger.warning(
+                "Unsupported MEDIA_PLAYER '%s' in oceano-now-playing; forcing 'oceano'.",
+                self.media_player_type,
+            )
+            self.media_player_type = "oceano"
         self.oceano_metadata_pipe = os.getenv(
             "OCEANO_METADATA_PIPE",
             self.oceano_metadata_pipe,
@@ -166,7 +163,7 @@ class Config:
             )
 
         # Media player type
-        valid_players = ("auto", "volumio", "moode", "picore", "oceano")
+        valid_players = ("oceano",)
         if self.media_player_type not in valid_players:
             raise ValueError(
                 f"media_player_type must be one of {valid_players}, "
@@ -220,11 +217,4 @@ class Config:
             f"mode_cycle_time={self.mode_cycle_time}s, "
             f"external_artwork={'on' if self.external_artwork_enabled else 'off'}"
         )
-        if self.media_player_type == "volumio":
-            logger.info(f"Volumio URL: {self.volumio_url}")
-        elif self.media_player_type == "moode":
-            logger.info(f"MoOde URL: {self.moode_url}")
-        elif self.media_player_type == "picore":
-            logger.info(f"LMS URL: {self.lms_url}")
-        elif self.media_player_type == "oceano":
-            logger.info(f"Oceano metadata pipe: {self.oceano_metadata_pipe}")
+        logger.info(f"Oceano metadata pipe: {self.oceano_metadata_pipe}")

@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# SPI Now Playing - PR/Branch Test Update Script
+# Oceano Now Playing - PR/Branch Test Update Script
 # Stops service, checks out a PR or branch, restarts, and rolls back on failure.
 set -euo pipefail
 
-SERVICE_NAME="spi-now-playing.service"
+SERVICE_NAME="oceano-now-playing.service"
 REMOTE_NAME="origin"
 MAIN_BRANCH="main"
 BACKUP_COMMIT=$(git rev-parse HEAD)
