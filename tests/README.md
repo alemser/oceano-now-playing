@@ -1,4 +1,4 @@
-# Testing Guide for SPI Now Playing
+# Testing Guide for Oceano Now Playing
 
 ## Test Coverage
 

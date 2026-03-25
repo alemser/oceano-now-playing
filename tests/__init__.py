@@ -1,1 +1,1 @@
-"""Test suite for SPI Now Playing application."""
+"""Test suite for Oceano Now Playing application."""

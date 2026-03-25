@@ -206,7 +206,7 @@ def main():
     config.validate()
     config.log_config()
 
-    logger.info("SPI Now Playing - Starting...")
+    logger.info("Oceano Now Playing - Starting...")
     time.sleep(3)
 
     renderer = Renderer(
