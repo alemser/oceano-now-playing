@@ -325,10 +325,8 @@ def main():
                         metadata_became_meaningful=metadata_upgraded,
                     ):
                         if not has_backend_artwork(chosen) and has_meaningful_artwork_metadata and chosen is data_digital:
-                            # Só o player digital tem resolve_artwork
-                            new_data = chosen
-                            new_data['_resolved_artwork'] = player_digital.resolve_artwork(
-                                new_data,
+                            chosen['_resolved_artwork'] = player_digital.resolve_artwork(
+                                chosen,
                                 timeout=ARTWORK_RESOLVE_TIMEOUT_SECONDS,
                             )
                         chosen['_artwork_resolve_time'] = now
@@ -354,11 +352,11 @@ def main():
                         else:
                             mode_label = 'cover' if show_artwork_mode else 'text'
                         logger.info(
-                            f"New song detected: {new_data.get('title')} - {new_data.get('artist')}. "
+                            f"New song detected: {chosen.get('title')} - {chosen.get('artist')}. "
                             f"Starting in {mode_label} mode."
                         )
 
-                    incoming_seek = new_data.get('seek')
+                    incoming_seek = chosen.get('seek')
                     if incoming_seek is None:
                         incoming_seek = 0
 
