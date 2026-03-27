@@ -29,10 +29,12 @@ is_showing_idle = False
 ARTWORK_RETRY_INTERVAL_SECONDS = 15.0
 ARTWORK_RESOLVE_TIMEOUT_SECONDS = 2.5
 
+
 # Global objects
 config = None
 renderer = None
-player = None
+player_digital = None
+player_analog = None
 
 
 def detect_media_player(cfg: Config) -> OceanoClient:
@@ -209,6 +211,7 @@ def main():
     logger.info("Oceano Now Playing - Starting...")
     time.sleep(3)
 
+
     renderer = Renderer(
         config.display_width,
         config.display_height,
@@ -216,7 +219,12 @@ def main():
         config.color_format,
         layout_profile=config.layout_profile,
     )
-    player = detect_media_player(config)
+    # Sempre instanciar ambos os players
+    player_digital = OceanoClient(
+        config.oceano_metadata_pipe,
+        external_artwork_enabled=config.external_artwork_enabled,
+    )
+    player_analog = OceanoAnalogClient()
 
     disable_cursor()
     last_active_time = time.time()
@@ -229,40 +237,64 @@ def main():
 
     while True:
         try:
-            logger.info(f"Connecting to media player ({config.media_player_type})...")
-            if not player.connect():
+            logger.info("Connecting to digital and analog media players...")
+            if not player_digital.connect():
+                logger.warning("Digital player failed to connect. Retrying...")
                 time.sleep(5)
                 continue
-            logger.info(f"Connected to {config.media_player_type}.")
+            if not player_analog.connect():
+                logger.warning("Analog player failed to connect. Retrying...")
+                time.sleep(5)
+                continue
+            logger.info("Connected to both players.")
 
-            player.get_state()
+            player_digital.get_state()
             last_sync_time = time.time()
 
             while True:
                 now = time.time()
 
                 if now - last_sync_time > 30:
-                    player.get_state()
+                    player_digital.get_state()
                     last_sync_time = now
 
-                new_data = player.receive_message(timeout=0.1)
-                if should_reconnect_player(player):
-                    logger.info("Media player disconnected. Reconnecting...")
-                    player.close()
+                # Consulta ambos os players
+                data_digital = player_digital.receive_message(timeout=0.1)
+                data_analog = player_analog.receive_message(timeout=0.1)
+
+                # Prioridade: digital tocando > analog tocando > idle
+                chosen = None
+                if data_digital and data_digital.get("status") == "play":
+                    chosen = data_digital
+                elif data_analog and data_analog.get("status") == "play":
+                    chosen = data_analog
+                elif data_digital:
+                    chosen = data_digital
+                elif data_analog:
+                    chosen = data_analog
+
+                if should_reconnect_player(player_digital):
+                    logger.info("Digital player disconnected. Reconnecting...")
+                    player_digital.close()
+                    time.sleep(0.5)
+                    break
+                if should_reconnect_player(player_analog):
+                    logger.info("Analog player disconnected. Reconnecting...")
+                    player_analog.close()
                     time.sleep(0.5)
                     break
 
-                if new_data:
+                if chosen:
                     is_new_song = False
-                    artwork_identity_is_new = artwork_identity_changed(new_data, last_state)
-                    metadata_upgraded = metadata_became_meaningful(new_data, last_state)
+                    artwork_identity_is_new = artwork_identity_changed(chosen, last_state)
+                    metadata_upgraded = metadata_became_meaningful(chosen, last_state)
                     has_meaningful_track_metadata = (
-                        _is_meaningful_metadata_value(new_data.get('title'))
-                        and _is_meaningful_metadata_value(new_data.get('artist'))
+                        _is_meaningful_metadata_value(chosen.get('title'))
+                        and _is_meaningful_metadata_value(chosen.get('artist'))
                     )
                     has_meaningful_artwork_metadata = (
-                        _is_meaningful_metadata_value(new_data.get('artist'))
-                        and _is_meaningful_metadata_value(new_data.get('album'))
+                        _is_meaningful_metadata_value(chosen.get('artist'))
+                        and _is_meaningful_metadata_value(chosen.get('album'))
                     )
 
                     # Avoid treating placeholder play states as new songs.
@@ -270,8 +302,8 @@ def main():
                         if not last_state:
                             is_new_song = True
                         elif (
-                            new_data.get('title') != last_state.get('title')
-                            or new_data.get('artist') != last_state.get('artist')
+                            chosen.get('title') != last_state.get('title')
+                            or chosen.get('artist') != last_state.get('artist')
                         ):
                             is_new_song = True
 
