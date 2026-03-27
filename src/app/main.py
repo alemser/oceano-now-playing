@@ -203,6 +203,8 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 
 def main():
+        DIGITAL_TIMEOUT_SECONDS = 5.0
+        last_digital_update = 0.0
     global last_state, last_rendered_state, last_rendered_mode
     global last_active_time, last_cycle_time, last_sync_time, last_render_time
     global last_seek_timestamp, last_known_seek, is_sleeping, is_showing_idle
@@ -263,12 +265,24 @@ def main():
                     last_sync_time = now
 
                 # Consulta ambos os players
+
                 data_digital = player_digital.receive_message(timeout=0.1)
                 data_analog = player_analog.receive_message(timeout=0.1)
 
+                now = time.time()
+                # Timeout: se não receber digital por X segundos, ignora digital
+                digital_active = False
+                if data_digital:
+                    last_digital_update = now
+                    if data_digital.get("status") == "play":
+                        digital_active = True
+                elif (now - last_digital_update) < DIGITAL_TIMEOUT_SECONDS and last_state and last_state.get("status") == "play":
+                    # Considera digital ativo se tocou recentemente
+                    digital_active = True
+
                 # Prioridade: digital tocando > analog tocando > idle
                 chosen = None
-                if data_digital and data_digital.get("status") == "play":
+                if digital_active and data_digital:
                     chosen = data_digital
                 elif data_analog and data_analog.get("status") == "play":
                     chosen = data_analog
