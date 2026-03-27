@@ -202,13 +202,14 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 
+
 def main():
-        DIGITAL_TIMEOUT_SECONDS = 5.0
-        last_digital_update = 0.0
+    DIGITAL_TIMEOUT_SECONDS = 5.0
+    last_digital_update = 0.0
     global last_state, last_rendered_state, last_rendered_mode
     global last_active_time, last_cycle_time, last_sync_time, last_render_time
     global last_seek_timestamp, last_known_seek, is_sleeping, is_showing_idle
-    global config, renderer, player
+    global config, renderer, player_digital, player_analog
 
     config = Config()
     config.validate()
