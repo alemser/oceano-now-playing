@@ -27,7 +27,7 @@ class OceanoAnalogClient(MediaPlayer):
         return True
 
     def receive_message(self, timeout: float = 1.0) -> Optional[dict]:
-        """Polls the source file for updates and returns state dict if changed."""
+        """Polls the source file for updates and returns state dict if changed, or last known state if unchanged."""
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -42,7 +42,8 @@ class OceanoAnalogClient(MediaPlayer):
             except (FileNotFoundError, json.JSONDecodeError):
                 pass
             time.sleep(self.poll_interval)
-        return None
+        # Se não mudou, retorna o último estado conhecido (se houver)
+        return self.last_state
 
     def _parse_state(self, data: dict) -> dict:
         """Converts oceano-source.json to player state dict."""
