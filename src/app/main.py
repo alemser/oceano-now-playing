@@ -265,6 +265,14 @@ def main():
                         and _is_meaningful_metadata_value(new_data.get('album'))
                     )
 
+                    # Logging detalhado para depuração de nova música
+                    logger.info(
+                        f"[DEBUG] Comparing for new song: "
+                        f"new_data.title={repr(new_data.get('title'))}, last_state.title={repr(last_state.get('title'))}; "
+                        f"new_data.artist={repr(new_data.get('artist'))}, last_state.artist={repr(last_state.get('artist'))}"
+                    )
+                    logger.info(f"[DEBUG] new_data={new_data}")
+                    logger.info(f"[DEBUG] last_state={last_state}")
                     # Avoid treating placeholder play states as new songs.
                     if has_meaningful_track_metadata:
                         if not last_state:
