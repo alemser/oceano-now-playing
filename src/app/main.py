@@ -252,10 +252,12 @@ def main():
                     time.sleep(0.5)
                     break
 
-                if new_data:
+                if new_data is None:
+                    logger.info("[DEBUG] new_data is None (no update from player)")
+                else:
                     is_new_song = False
-                    artwork_identity_is_new = artwork_identity_changed(new_data, last_state)
-                    metadata_upgraded = metadata_became_meaningful(new_data, last_state)
+                    artwork_identity_is_new = artwork_identity_changed(new_data, last_state) if last_state else False
+                    metadata_upgraded = metadata_became_meaningful(new_data, last_state) if last_state else False
                     has_meaningful_track_metadata = (
                         _is_meaningful_metadata_value(new_data.get('title'))
                         and _is_meaningful_metadata_value(new_data.get('artist'))
@@ -268,8 +270,8 @@ def main():
                     # Logging detalhado para depuração de nova música
                     logger.info(
                         f"[DEBUG] Comparing for new song: "
-                        f"new_data.title={repr(new_data.get('title'))}, last_state.title={repr(last_state.get('title'))}; "
-                        f"new_data.artist={repr(new_data.get('artist'))}, last_state.artist={repr(last_state.get('artist'))}"
+                        f"new_data.title={repr(new_data.get('title'))}, last_state.title={repr(last_state.get('title')) if last_state else None}; "
+                        f"new_data.artist={repr(new_data.get('artist'))}, last_state.artist={repr(last_state.get('artist')) if last_state else None}"
                     )
                     logger.info(f"[DEBUG] new_data={new_data}")
                     logger.info(f"[DEBUG] last_state={last_state}")
@@ -329,7 +331,7 @@ def main():
                             f"Starting in {mode_label} mode."
                         )
 
-                    incoming_seek = new_data.get('seek')
+                    incoming_seek = new_data.get('seek') if new_data else 0
                     if incoming_seek is None:
                         incoming_seek = 0
 
@@ -338,7 +340,7 @@ def main():
                     if last_seek_timestamp == 0 or incoming_seek != last_known_seek:
                         last_known_seek = incoming_seek
                         last_seek_timestamp = now
-                    status = new_data.get('status')
+                    status = new_data.get('status') if new_data else None
                     if status == 'play':
                         last_active_time = now
 
@@ -352,7 +354,8 @@ def main():
                 if not last_state:
                     continue
 
-                if last_state.get('status') != 'play':
+                status = last_state.get('status') if last_state else None
+                if status != 'play':
                     if now - last_active_time > config.standby_timeout:
                         if not is_sleeping:
                             logger.debug(f"Inactive for {config.standby_timeout}s. Entering standby.")
@@ -362,7 +365,7 @@ def main():
                         continue
 
                     if not is_showing_idle and not is_sleeping:
-                        logger.debug(f"Player {last_state.get('status')}. Showing idle screen.")
+                        logger.debug(f"Player {status}. Showing idle screen.")
                         renderer.render_idle_screen()
                         is_showing_idle = True
                     continue
@@ -384,7 +387,7 @@ def main():
                 last_active_time = now
 
                 if config.display_mode == 'rotate':
-                    if last_state.get('status') == 'play' and now - last_cycle_time > config.mode_cycle_time:
+                    if status == 'play' and now - last_cycle_time > config.mode_cycle_time:
                         show_artwork_mode = not show_artwork_mode
                         last_cycle_time = now
                         logger.debug(f"Switching to {'cover' if show_artwork_mode else 'text'} mode...")
@@ -400,12 +403,12 @@ def main():
                     current_render_mode = 'artwork' if show_artwork_mode else 'text'
                 mode_changed = current_render_mode != last_rendered_mode
                 time_to_update_progress = (
-                    last_state.get('status') == 'play' and now - last_render_time >= 1.0
+                    status == 'play' and now - last_render_time >= 1.0
                 )
 
                 if state_changed or mode_changed or time_to_update_progress:
                     current_seek = last_known_seek
-                    if last_state.get('status') == 'play':
+                    if status == 'play':
                         current_seek += int((now - last_seek_timestamp) * 1000)
 
                     render_data = last_state.copy()
