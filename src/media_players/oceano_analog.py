@@ -65,6 +65,6 @@ class OceanoAnalogClient(MediaPlayer):
             "artist": "",
             "album": "",
             "quality": quality,
-            "sample_rate": 44100 if source == "CD" else None,
+            "samplerate": 44100 if source == "CD" else None,
             "status": status,
         }
