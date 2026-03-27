@@ -189,8 +189,12 @@ def signal_handler(sig, frame):
     if renderer:
         renderer.clear(use_fsync=False)
         renderer.close()
-    if player:
-        player.close()
+    # Fechar ambos os players se existirem
+    global player_digital, player_analog
+    if player_digital:
+        player_digital.close()
+    if player_analog:
+        player_analog.close()
     sys.exit(0)
 
 
