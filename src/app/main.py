@@ -324,20 +324,21 @@ def main():
                         now=now,
                         metadata_became_meaningful=metadata_upgraded,
                     ):
-                        if not has_backend_artwork(new_data) and has_meaningful_artwork_metadata:
-                            new_data['_resolved_artwork'] = player.resolve_artwork(
+                        if not has_backend_artwork(chosen) and has_meaningful_artwork_metadata and chosen is data_digital:
+                            # Só o player digital tem resolve_artwork
+                            new_data = chosen
+                            new_data['_resolved_artwork'] = player_digital.resolve_artwork(
                                 new_data,
                                 timeout=ARTWORK_RESOLVE_TIMEOUT_SECONDS,
                             )
-                        new_data['_artwork_resolve_time'] = now
+                        chosen['_artwork_resolve_time'] = now
                     else:
-                        if has_backend_artwork(new_data):
-                            # Keep freshly provided backend art even if we skip fallback re-resolution.
-                            new_data['_artwork_resolve_time'] = now
+                        if has_backend_artwork(chosen):
+                            chosen['_artwork_resolve_time'] = now
                         else:
-                            new_data['_resolved_artwork'] = previous_resolved_artwork
+                            chosen['_resolved_artwork'] = previous_resolved_artwork
                             if previous_artwork_resolve_time is not None:
-                                new_data['_artwork_resolve_time'] = previous_artwork_resolve_time
+                                chosen['_artwork_resolve_time'] = previous_artwork_resolve_time
 
                     if is_new_song:
                         if config.display_mode == 'artwork':
@@ -453,8 +454,10 @@ def main():
 
         except Exception as e:
             logger.error(f"Error in connection/main loop: {e}")
-            if player:
-                player.close()
+            if player_digital:
+                player_digital.close()
+            if player_analog:
+                player_analog.close()
             time.sleep(5)
 
 
