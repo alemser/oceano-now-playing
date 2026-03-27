@@ -208,7 +208,7 @@ def test_oceano_analog_client_basic(tmp_path):
     analog_file.write_text(json.dumps(data))
     state = client.receive_message(timeout=0.1)
     assert state["quality"] == "CD"
-    assert state["sample_rate"] == 44100
+    assert state["samplerate"] == 44100
     # Change to Standby
     data = {"source": "Standby", "updated_at": "2026-03-27T02:00:00Z"}
     analog_file.write_text(json.dumps(data))
