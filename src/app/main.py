@@ -252,9 +252,7 @@ def main():
                     time.sleep(0.5)
                     break
 
-                if new_data is None:
-                    logger.info("[DEBUG] new_data is None (no update from player)")
-                else:
+                if new_data is not None:
                     is_new_song = False
                     artwork_identity_is_new = artwork_identity_changed(new_data, last_state) if last_state else False
                     metadata_upgraded = metadata_became_meaningful(new_data, last_state) if last_state else False
@@ -267,14 +265,6 @@ def main():
                         and _is_meaningful_metadata_value(new_data.get('album'))
                     )
 
-                    # Logging detalhado para depuração de nova música
-                    logger.info(
-                        f"[DEBUG] Comparing for new song: "
-                        f"new_data.title={repr(new_data.get('title'))}, last_state.title={repr(last_state.get('title')) if last_state else None}; "
-                        f"new_data.artist={repr(new_data.get('artist'))}, last_state.artist={repr(last_state.get('artist')) if last_state else None}"
-                    )
-                    logger.info(f"[DEBUG] new_data={new_data}")
-                    logger.info(f"[DEBUG] last_state={last_state}")
                     # Avoid treating placeholder play states as new songs.
                     if has_meaningful_track_metadata:
                         if not last_state:
