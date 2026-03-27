@@ -46,18 +46,22 @@ class OceanoAnalogClient(MediaPlayer):
 
     def _parse_state(self, data: dict) -> dict:
         """Converts oceano-source.json to player state dict."""
-        source = data.get("source", "Standby")
+        source = data.get("source")
         if source == "Vinyl":
             quality = "Vinyl"
             status = "play"
         elif source == "CD":
             quality = "CD"
             status = "play"
-        else:
+        elif not source or source == "Standby":
+            # None, missing, or Standby: idle
             quality = "Standby"
             status = "stop"
+        else:
+            quality = str(source)
+            status = "stop"
         return {
-            "title": "Analog source",
+            "title": "Analog source" if status == "play" else "",
             "artist": "",
             "album": "",
             "quality": quality,

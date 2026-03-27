@@ -216,6 +216,22 @@ def test_oceano_analog_client_basic(tmp_path):
     assert state["quality"] == "Standby"
     assert state["status"] == "stop"
 
+    # Source is None (idle)
+    data = {"source": None, "updated_at": "2026-03-27T03:00:00Z"}
+    analog_file.write_text(json.dumps(data))
+    state = client.receive_message(timeout=0.1)
+    assert state["quality"] == "Standby"
+    assert state["status"] == "stop"
+    assert state["title"] == ""
+
+    # Source missing (idle)
+    data = {"updated_at": "2026-03-27T04:00:00Z"}
+    analog_file.write_text(json.dumps(data))
+    state = client.receive_message(timeout=0.1)
+    assert state["quality"] == "Standby"
+    assert state["status"] == "stop"
+    assert state["title"] == ""
+
 
 def test_detect_media_player_oceano_analog(monkeypatch, tmp_path):
     """detect_media_player() returns OceanoAnalogClient when MEDIA_PLAYER=oceano_analog."""
