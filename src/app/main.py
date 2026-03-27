@@ -365,7 +365,7 @@ def main():
                     if last_seek_timestamp == 0 or incoming_seek != last_known_seek:
                         last_known_seek = incoming_seek
                         last_seek_timestamp = now
-                    status = new_data.get('status')
+                    status = chosen.get('status')
                     if status == 'play':
                         last_active_time = now
 
@@ -374,7 +374,7 @@ def main():
                         is_sleeping = False
                         is_showing_idle = False
 
-                    last_state = new_data
+                    last_state = chosen
 
                 if not last_state:
                     continue
