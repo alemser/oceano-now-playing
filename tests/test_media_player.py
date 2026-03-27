@@ -191,7 +191,7 @@ def test_detect_media_player_coerces_legacy_backend_values(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_oceano_analog_client_basic(tmp_path):
-    """OceanoAnalogClient reads and parses the analog source file."""
+    """OceanoAnalogClient reads and parses the physical media file."""
     from media_players.oceano_analog import OceanoAnalogClient
     analog_file = tmp_path / "oceano-source.json"
     # Write initial state
@@ -200,7 +200,7 @@ def test_oceano_analog_client_basic(tmp_path):
     client = OceanoAnalogClient(str(analog_file))
     assert client.connect() is True
     state = client.receive_message(timeout=0.1)
-    assert state["title"] == "Analog source"
+    assert state["title"] == "Physical media"
     assert state["quality"] == "Vinyl"
     assert state["status"] == "play"
     # Change to CD

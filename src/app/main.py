@@ -46,7 +46,7 @@ def detect_media_player(cfg: Config) -> OceanoClient:
             external_artwork_enabled=cfg.external_artwork_enabled,
         )
     elif cfg.media_player_type == 'oceano_analog':
-        logger.info("Using Oceano Analog client (analog source detection)")
+        logger.info("Using Oceano Analog client (Physical media detection)")
         return OceanoAnalogClient()
     else:
         raise ValueError(f"Unsupported MEDIA_PLAYER: {cfg.media_player_type}")

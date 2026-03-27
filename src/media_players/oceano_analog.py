@@ -6,7 +6,7 @@ from typing import Optional
 
 class OceanoAnalogClient(MediaPlayer):
     """
-    Media player client for analog sources (Vinyl, CD, Standby) via oceano-source.json.
+    Media player client for physical media (Vinyl, CD) via oceano-source.json.
     """
 
     def close(self) -> None:
@@ -20,7 +20,7 @@ class OceanoAnalogClient(MediaPlayer):
         self.poll_interval = 1.0  # seconds
 
     def connect(self) -> bool:
-        """No-op for analog source. Always 'connected'."""
+        """No-op for physical media. Always 'connected'."""
         return True
 
     def is_connected(self) -> bool:
@@ -62,7 +62,7 @@ class OceanoAnalogClient(MediaPlayer):
             quality = str(source)
             status = "stop"
         return {
-            "title": "Analog source" if status == "play" else "",
+            "title": "Physical media" if status == "play" else "",
             "artist": "",
             "album": "",
             "quality": quality,
