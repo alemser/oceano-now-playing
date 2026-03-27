@@ -7,6 +7,7 @@ import logging
 from config import Config
 from media_players.base import MediaPlayer
 from media_players.oceano import OceanoClient
+from media_players.oceano_analog import OceanoAnalogClient
 from renderer import Renderer
 
 # --- LOGGING CONFIGURATION ---
@@ -36,18 +37,17 @@ player = None
 
 def detect_media_player(cfg: Config) -> OceanoClient:
     """Instantiate the Oceano metadata client used by this fork."""
-    if cfg.media_player_type != 'oceano':
-        logger.warning(
-            "Unsupported MEDIA_PLAYER '%s' in oceano-now-playing; forcing oceano.",
-            cfg.media_player_type,
+    if cfg.media_player_type == 'oceano':
+        logger.info(f"Using Oceano client at {cfg.oceano_metadata_pipe}")
+        return OceanoClient(
+            cfg.oceano_metadata_pipe,
+            external_artwork_enabled=cfg.external_artwork_enabled,
         )
-        cfg.media_player_type = 'oceano'
-
-    logger.info(f"Using Oceano client at {cfg.oceano_metadata_pipe}")
-    return OceanoClient(
-        cfg.oceano_metadata_pipe,
-        external_artwork_enabled=cfg.external_artwork_enabled,
-    )
+    elif cfg.media_player_type == 'oceano_analog':
+        logger.info("Using Oceano Analog client (analog source detection)")
+        return OceanoAnalogClient()
+    else:
+        raise ValueError(f"Unsupported MEDIA_PLAYER: {cfg.media_player_type}")
 
 
 def should_resolve_artwork(

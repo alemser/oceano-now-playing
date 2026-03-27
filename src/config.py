@@ -113,12 +113,6 @@ class Config:
         self.media_player_type = os.getenv(
             "MEDIA_PLAYER", self.media_player_type
         ).lower()
-        if self.media_player_type != "oceano":
-            logger.warning(
-                "Unsupported MEDIA_PLAYER '%s' in oceano-now-playing; forcing 'oceano'.",
-                self.media_player_type,
-            )
-            self.media_player_type = "oceano"
         self.oceano_metadata_pipe = os.getenv(
             "OCEANO_METADATA_PIPE",
             self.oceano_metadata_pipe,
@@ -163,7 +157,7 @@ class Config:
             )
 
         # Media player type
-        valid_players = ("oceano",)
+        valid_players = ("oceano", "oceano_analog")
         if self.media_player_type not in valid_players:
             raise ValueError(
                 f"media_player_type must be one of {valid_players}, "

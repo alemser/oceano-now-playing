@@ -1,3 +1,6 @@
+import tempfile
+import json
+import shutil
 """Tests for the MediaPlayer abstract base class, OceanoClient inheritance,
 and the Oceano-only detect_media_player() factory function.
 
@@ -178,7 +181,66 @@ def test_detect_media_player_coerces_legacy_backend_values(monkeypatch):
     """Legacy backend values are coerced to Oceano during migration."""
     monkeypatch.setenv('MEDIA_PLAYER', 'volumio')
     fn, cfg = _load_detect_function()
-    from media_players.oceano import OceanoClient
-    player = fn(cfg)
-    assert isinstance(player, OceanoClient)
-    assert cfg.media_player_type == 'oceano'
+    import pytest
+    with pytest.raises(ValueError):
+        fn(cfg)
+
+
+# ---------------------------------------------------------------------------
+# OceanoAnalogClient tests
+# ---------------------------------------------------------------------------
+
+def test_oceano_analog_client_basic(tmp_path):
+    """OceanoAnalogClient reads and parses the analog source file."""
+    from media_players.oceano_analog import OceanoAnalogClient
+    analog_file = tmp_path / "oceano-source.json"
+    # Write initial state
+    data = {"source": "Vinyl", "updated_at": "2026-03-27T00:24:39Z"}
+    analog_file.write_text(json.dumps(data))
+    client = OceanoAnalogClient(str(analog_file))
+    assert client.connect() is True
+    state = client.receive_message(timeout=0.1)
+    assert state["title"] == "Analog source"
+    assert state["quality"] == "Vinyl"
+    assert state["status"] == "play"
+    # Change to CD
+    data = {"source": "CD", "updated_at": "2026-03-27T01:00:00Z"}
+    analog_file.write_text(json.dumps(data))
+    state = client.receive_message(timeout=0.1)
+    assert state["quality"] == "CD"
+    assert state["sample_rate"] == 44100
+    # Change to Standby
+    data = {"source": "Standby", "updated_at": "2026-03-27T02:00:00Z"}
+    analog_file.write_text(json.dumps(data))
+    state = client.receive_message(timeout=0.1)
+    assert state["quality"] == "Standby"
+    assert state["status"] == "stop"
+
+
+def test_detect_media_player_oceano_analog(monkeypatch, tmp_path):
+    """detect_media_player() returns OceanoAnalogClient when MEDIA_PLAYER=oceano_analog."""
+    analog_file = tmp_path / "oceano-source.json"
+    analog_file.write_text(json.dumps({"source": "Vinyl", "updated_at": "2026-03-27T00:24:39Z"}))
+    monkeypatch.setenv('MEDIA_PLAYER', 'oceano_analog')
+    # Patch default path to our temp file
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'app_main',
+        os.path.join(os.path.dirname(__file__), '..', 'src', 'app', 'main.py')
+    )
+    app_main = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(app_main)
+    # Patch OceanoAnalogClient to use our temp file
+    from media_players.oceano_analog import OceanoAnalogClient
+    orig_init = OceanoAnalogClient.__init__
+    def _patched_init(self, source_file=None):
+        orig_init(self, str(analog_file))
+    OceanoAnalogClient.__init__ = _patched_init
+    from config import Config
+    cfg = Config()
+    player = app_main.detect_media_player(cfg)
+    assert isinstance(player, OceanoAnalogClient)
+    state = player.receive_message(timeout=0.1)
+    assert state["quality"] == "Vinyl"
+    # Restore
+    OceanoAnalogClient.__init__ = orig_init

@@ -138,7 +138,8 @@ def test_config_env_MEDIA_PLAYER_legacy_value_is_coerced(monkeypatch):
     """Legacy MEDIA_PLAYER values are coerced to oceano for migration safety."""
     monkeypatch.setenv("MEDIA_PLAYER", "volumio")
     cfg = Config()
-    assert cfg.media_player_type == "oceano"
+    # Novo comportamento: não há mais coerção automática
+    assert cfg.media_player_type == "volumio"
 
 
 def test_config_env_OCEANO_METADATA_PIPE(monkeypatch):
