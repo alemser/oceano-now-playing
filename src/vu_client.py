@@ -73,7 +73,7 @@ class VUClient:
             try:
                 self._connect_and_read()
             except Exception as e:
-                logger.debug("VU socket error: %s — retrying in 2s", e)
+                logger.warning("VU socket error: %s — retrying in 2s", e)
                 self._reset_to_zero()
                 time.sleep(2)
 
@@ -82,7 +82,7 @@ class VUClient:
         sock.settimeout(2.0)
         sock.connect(self.socket_path)
         sock.settimeout(1.0)
-        logger.debug("VU socket connected")
+        logger.info("VU socket connected to %s", self.socket_path)
 
         buf = b""
         last_t = time.monotonic()
