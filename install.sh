@@ -36,6 +36,7 @@ cat <<EOF | sudo tee $SERVICE_PATH
 Description=Oceano Now Playing Display
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -45,7 +46,6 @@ StandardOutput=journal
 StandardError=journal
 Restart=always
 RestartSec=10
-StartLimitIntervalSec=0
 TimeoutStopSec=30
 User=${USER_NAME}
 Group=video
