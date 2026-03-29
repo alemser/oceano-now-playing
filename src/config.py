@@ -115,6 +115,12 @@ class Config:
         self.media_player_type = os.getenv(
             "MEDIA_PLAYER", self.media_player_type
         ).lower()
+        if self.media_player_type not in ("auto", "oceano", "state_file"):
+            logger.warning(
+                "Unsupported MEDIA_PLAYER '%s'; falling back to 'auto'.",
+                self.media_player_type,
+            )
+            self.media_player_type = "auto"
         self.oceano_metadata_pipe = os.getenv(
             "OCEANO_METADATA_PIPE",
             self.oceano_metadata_pipe,

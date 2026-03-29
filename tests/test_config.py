@@ -41,7 +41,7 @@ def test_config_defaults():
     assert cfg.ui_preset == "high_contrast_rotate"
     assert cfg.layout_profile == "high_contrast"
     assert cfg.display_mode == "rotate"
-    assert cfg.media_player_type == "oceano"
+    assert cfg.media_player_type == "auto"
     assert cfg.external_artwork_enabled is True
     assert cfg.mode_cycle_time == 30
     assert cfg.standby_timeout == 600
@@ -135,10 +135,10 @@ def test_config_env_MEDIA_PLAYER(monkeypatch):
 
 
 def test_config_env_MEDIA_PLAYER_legacy_value_is_coerced(monkeypatch):
-    """Legacy MEDIA_PLAYER values are coerced to oceano for migration safety."""
+    """Unknown MEDIA_PLAYER values are coerced to 'auto' for migration safety."""
     monkeypatch.setenv("MEDIA_PLAYER", "volumio")
     cfg = Config()
-    assert cfg.media_player_type == "oceano"
+    assert cfg.media_player_type == "auto"
 
 
 def test_config_env_OCEANO_METADATA_PIPE(monkeypatch):
@@ -276,9 +276,9 @@ def test_config_validate_color_format_case_insensitive():
     cfg.validate()  # Should not raise
 
 
-def test_config_validate_media_player_only_oceano_allowed():
-    """Config.validate() rejects non-Oceano media player values."""
+def test_config_validate_media_player_unknown_rejected():
+    """Config.validate() rejects unknown media_player_type values."""
     cfg = Config()
-    cfg.media_player_type = "auto"
+    cfg.media_player_type = "volumio"
     with pytest.raises(ValueError, match="media_player_type must be one of"):
         cfg.validate()

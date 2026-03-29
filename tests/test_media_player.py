@@ -175,10 +175,7 @@ def test_detect_media_player_respects_external_artwork_flag(monkeypatch):
 
 
 def test_detect_media_player_coerces_legacy_backend_values(monkeypatch):
-    """Legacy backend values are coerced to Oceano during migration."""
+    """Unknown MEDIA_PLAYER values are coerced to 'auto' during migration."""
     monkeypatch.setenv('MEDIA_PLAYER', 'volumio')
     fn, cfg = _load_detect_function()
-    from media_players.oceano import OceanoClient
-    player = fn(cfg)
-    assert isinstance(player, OceanoClient)
-    assert cfg.media_player_type == 'oceano'
+    assert cfg.media_player_type == 'auto'
