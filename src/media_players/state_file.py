@@ -138,10 +138,13 @@ class StateFileClient(MediaPlayer):
         status = "play" if playing else "stop"
 
         if not playing or track is None:
+            # For physical sources (vinyl/CD) the track may be null while recognition
+            # is in progress. Use empty strings so the UI renders nothing rather than
+            # showing "Unknown" placeholders.
             state = {
-                "title": "Unknown",
-                "artist": "Unknown",
-                "album": "Unknown",
+                "title": "",
+                "artist": "",
+                "album": "",
                 "status": status,
                 "seek": 0,
                 "duration": 0,
