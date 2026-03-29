@@ -127,6 +127,21 @@ def test_config_validate_invalid_display_mode():
         cfg.validate()
 
 
+def test_config_env_DISPLAY_MODE_vu(monkeypatch):
+    """Config accepts vu as a valid DISPLAY_MODE."""
+    monkeypatch.setenv("DISPLAY_MODE", "vu")
+    cfg = Config()
+    assert cfg.display_mode == "vu"
+    cfg.validate()  # should not raise
+
+
+def test_config_env_VU_SOCKET(monkeypatch):
+    """Config loads VU_SOCKET from environment."""
+    monkeypatch.setenv("VU_SOCKET", "/tmp/custom-vu.sock")
+    cfg = Config()
+    assert cfg.vu_socket == "/tmp/custom-vu.sock"
+
+
 def test_config_env_MEDIA_PLAYER(monkeypatch):
     """Config normalizes explicit Oceano selection to lowercase."""
     monkeypatch.setenv("MEDIA_PLAYER", "OcEaNo")

@@ -11,6 +11,7 @@ from media_players.base import MediaPlayer
 from media_players.oceano import OceanoClient
 from media_players.state_file import StateFileClient
 from renderer import Renderer
+from vu_client import VUClient
 
 # --- LOGGING CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -35,6 +36,7 @@ ARTWORK_RESOLVE_TIMEOUT_SECONDS = 2.5
 config = None
 renderer = None
 player = None
+vu_client = None
 
 
 def detect_media_player(cfg: Config) -> MediaPlayer:
@@ -197,6 +199,8 @@ def enable_cursor():
 def signal_handler(sig, frame):
     logger.info("Exiting application...")
     enable_cursor()
+    if vu_client:
+        vu_client.stop()
     if renderer:
         renderer.clear(use_fsync=False)
         renderer.close()
@@ -213,7 +217,7 @@ def main():
     global last_state, last_rendered_state, last_rendered_mode
     global last_active_time, last_cycle_time, last_sync_time, last_render_time
     global last_seek_timestamp, last_known_seek, is_sleeping, is_showing_idle
-    global config, renderer, player
+    global config, renderer, player, vu_client
 
     config = Config()
     config.validate()
@@ -230,6 +234,10 @@ def main():
         layout_profile=config.layout_profile,
     )
     player = detect_media_player(config)
+
+    if config.display_mode == "vu":
+        vu_client = VUClient(config.vu_socket)
+        vu_client.start()
 
     disable_cursor()
     last_active_time = time.time()
@@ -389,45 +397,59 @@ def main():
 
                 last_active_time = now
 
-                if config.display_mode == 'rotate':
-                    if status == 'play' and now - last_cycle_time > config.mode_cycle_time:
-                        show_artwork_mode = not show_artwork_mode
-                        last_cycle_time = now
-                        logger.debug(f"Switching to {'cover' if show_artwork_mode else 'text'} mode...")
-                elif config.display_mode == 'artwork':
-                    show_artwork_mode = True
+                if config.display_mode == 'vu':
+                    # VU mode: render at ~15 fps regardless of metadata changes.
+                    if now - last_render_time >= 0.067:
+                        vu_l, vu_r, peak_l, peak_r = vu_client.get_levels()
+                        current_seek = last_known_seek
+                        if status == 'play':
+                            current_seek += int((now - last_seek_timestamp) * 1000)
+                        render_data = last_state.copy()
+                        render_data['seek'] = current_seek
+                        renderer.render_vu(vu_l, vu_r, peak_l, peak_r, render_data)
+                        last_render_time = now
+                        is_showing_idle = False
+                        is_sleeping = False
                 else:
-                    show_artwork_mode = False
+                    if config.display_mode == 'rotate':
+                        if status == 'play' and now - last_cycle_time > config.mode_cycle_time:
+                            show_artwork_mode = not show_artwork_mode
+                            last_cycle_time = now
+                            logger.debug(f"Switching to {'cover' if show_artwork_mode else 'text'} mode...")
+                    elif config.display_mode == 'artwork':
+                        show_artwork_mode = True
+                    else:
+                        show_artwork_mode = False
 
-                state_changed = not states_are_equal(last_state, last_rendered_state)
-                if config.display_mode == 'hybrid':
-                    current_render_mode = 'hybrid'
-                else:
-                    current_render_mode = 'artwork' if show_artwork_mode else 'text'
-                mode_changed = current_render_mode != last_rendered_mode
-                time_to_update_progress = (
-                    status == 'play' and now - last_render_time >= 1.0
-                )
-
-                if state_changed or mode_changed or time_to_update_progress:
-                    current_seek = last_known_seek
-                    if status == 'play':
-                        current_seek += int((now - last_seek_timestamp) * 1000)
-
-                    render_data = last_state.copy()
-                    render_data['seek'] = current_seek
-
-                    renderer.render(
-                        render_data,
-                        show_artwork_mode=show_artwork_mode,
-                        show_hybrid_mode=(config.display_mode == 'hybrid'),
+                    state_changed = not states_are_equal(last_state, last_rendered_state)
+                    if config.display_mode == 'hybrid':
+                        current_render_mode = 'hybrid'
+                    else:
+                        current_render_mode = 'artwork' if show_artwork_mode else 'text'
+                    mode_changed = current_render_mode != last_rendered_mode
+                    time_to_update_progress = (
+                        status == 'play' and now - last_render_time >= 1.0
                     )
 
-                    last_rendered_state = last_state.copy()
-                    last_rendered_mode = current_render_mode
-                    last_render_time = now
-                    is_showing_idle = False
-                    is_sleeping = False
+                    if state_changed or mode_changed or time_to_update_progress:
+                        current_seek = last_known_seek
+                        if status == 'play':
+                            current_seek += int((now - last_seek_timestamp) * 1000)
+
+                        render_data = last_state.copy()
+                        render_data['seek'] = current_seek
+
+                        renderer.render(
+                            render_data,
+                            show_artwork_mode=show_artwork_mode,
+                            show_hybrid_mode=(config.display_mode == 'hybrid'),
+                        )
+
+                        last_rendered_state = last_state.copy()
+                        last_rendered_mode = current_render_mode
+                        last_render_time = now
+                        is_showing_idle = False
+                        is_sleeping = False
 
         except Exception as e:
             logger.error(f"Error in connection/main loop: {e}")
