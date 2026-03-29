@@ -70,7 +70,11 @@ SupplementaryGroups=video
 WantedBy=multi-user.target
 EOF
 
-# 4. Finalize and Start Service
+# 4. Install oceano-mode helper
+echo "Installing oceano-mode command..."
+sudo install -m 0755 "${WORKING_DIR}/oceano-mode" /usr/local/bin/oceano-mode
+
+# 5. Finalize and Start Service
 echo "Reloading systemd and starting service..."
 sudo systemctl daemon-reload
 sudo systemctl enable oceano-now-playing.service
@@ -79,3 +83,5 @@ sudo systemctl restart oceano-now-playing.service
 echo "--- Installation Complete! ---"
 echo "You can check the service status with: sudo systemctl status oceano-now-playing.service"
 echo "Or view logs with: journalctl -u oceano-now-playing.service -f"
+echo ""
+echo "Switch display modes with: oceano-mode <text|artwork|hybrid|rotate|vu>"

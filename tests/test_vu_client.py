@@ -1,21 +1,21 @@
 """Tests for VUClient ballistics helpers."""
 
 import math
-from vu_client import _smooth, _update_peak, _PEAK_HOLD
+from vu_client import _smooth, _update_peak, _ATTACK_TAU, _DECAY_TAU, _PEAK_HOLD
 
 
 # ── _smooth ────────────────────────────────────────────────────────────────
 
 def test_smooth_attack_moves_toward_target():
     """Level below target should move up using attack tau."""
-    result = _smooth(0.0, 1.0, dt=0.050)   # exactly 1× attack tau
+    result = _smooth(0.0, 1.0, dt=_ATTACK_TAU)   # exactly 1× attack tau
     # alpha = 1 - exp(-1) ≈ 0.632
     assert abs(result - (1.0 - math.exp(-1.0))) < 1e-6
 
 
 def test_smooth_decay_moves_toward_zero():
     """Level above target should decay using decay tau."""
-    result = _smooth(1.0, 0.0, dt=0.300)   # exactly 1× decay tau
+    result = _smooth(1.0, 0.0, dt=_DECAY_TAU)   # exactly 1× decay tau
     # alpha = 1 - exp(-1) ≈ 0.632; result ≈ 1 - 0.632 = 0.368
     assert abs(result - math.exp(-1.0)) < 1e-6
 

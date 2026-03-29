@@ -17,8 +17,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Ballistics constants
-_ATTACK_TAU = 0.050   # 50 ms — fast attack to catch transients
-_DECAY_TAU = 0.300    # 300 ms — slow decay for classic VU feel
+_ATTACK_TAU = 0.020   # 20 ms — fast attack to catch transients
+_DECAY_TAU = 0.180    # 180 ms — smooth decay without sluggishness
 _PEAK_HOLD = 1.5      # seconds to hold peak before dropping
 
 

@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# oceano-mode — switch the Oceano Now Playing display mode at runtime.
+#
+# Usage:
+#   oceano-mode <mode>
+#   oceano-mode status
+#
+# Modes: text, artwork, hybrid, rotate, vu
+#
+# Requires sudo (writes systemd drop-in and reloads daemon).
+set -euo pipefail
+
+VALID_MODES="text artwork hybrid rotate vu"
+SERVICE="oceano-now-playing.service"
+DROPIN_DIR="/etc/systemd/system/${SERVICE}.d"
+DROPIN_FILE="${DROPIN_DIR}/oceano-mode.conf"
+
+# ── helpers ───────────────────────────────────────────────────────────────
+
+usage() {
+  echo "Usage: oceano-mode <mode> | status"
+  echo ""
+  echo "Modes: ${VALID_MODES}"
+  echo ""
+  echo "Examples:"
+  echo "  oceano-mode vu       # switch to VU meters"
+  echo "  oceano-mode text     # switch to text mode"
+  echo "  oceano-mode status   # show current mode"
+  exit 1
+}
+
+current_mode() {
+  if [[ -f "${DROPIN_FILE}" ]]; then
+    grep -oP '(?<=DISPLAY_MODE=)\S+' "${DROPIN_FILE}" 2>/dev/null || echo "unknown"
+  else
+    echo "rotate (default)"
+  fi
+}
+
+require_root() {
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    echo "This command requires sudo. Re-running with sudo..."
+    exec sudo "$0" "$@"
+  fi
+}
+
+# ── main ──────────────────────────────────────────────────────────────────
+
+if [[ $# -lt 1 ]]; then
+  usage
+fi
+
+case "$1" in
+  status)
+    echo "Current mode: $(current_mode)"
+    exit 0
+    ;;
+  -h|--help)
+    usage
+    ;;
+esac
+
+MODE="$1"
+
+# Validate
+valid=false
+for m in ${VALID_MODES}; do
+  [[ "${MODE}" == "${m}" ]] && valid=true && break
+done
+if [[ "${valid}" == false ]]; then
+  echo "Unknown mode '${MODE}'. Valid modes: ${VALID_MODES}"
+  exit 1
+fi
+
+require_root "$@"
+
+# Write drop-in
+mkdir -p "${DROPIN_DIR}"
+cat > "${DROPIN_FILE}" <<EOF
+[Service]
+Environment=DISPLAY_MODE=${MODE}
+EOF
+
+# Reload and restart
+systemctl daemon-reload
+systemctl restart "${SERVICE}"
+
+echo "Display mode set to '${MODE}' and service restarted."
+echo "Logs: journalctl -u ${SERVICE} -f"
