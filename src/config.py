@@ -65,6 +65,9 @@ class Config:
     oceano_state_file: str = "/tmp/oceano-state.json"
     external_artwork_enabled: bool = True
 
+    # VU meter
+    vu_socket: str = "/tmp/oceano-vu.sock"
+
     # Timing (seconds)
     mode_cycle_time: int = 30  # seconds between text/artwork modes
     standby_timeout: int = 600  # seconds before display sleeps (10 min)
@@ -81,7 +84,7 @@ class Config:
         - COLOR_FORMAT: RGB565 or BGR565 (default: RGB565)
         - UI_PRESET: combined style+mode preset (default: high_contrast_rotate)
         - LAYOUT_PROFILE: renderer layout profile (classic or high_contrast)
-        - DISPLAY_MODE: rotate, text, artwork, or hybrid
+        - DISPLAY_MODE: rotate, text, artwork, hybrid, or vu
         - MEDIA_PLAYER: auto, oceano, or state_file (default: auto)
         - OCEANO_METADATA_PIPE: shairport-sync metadata fifo path
         - OCEANO_STATE_FILE: unified state file path (default: /tmp/oceano-state.json)
@@ -129,6 +132,7 @@ class Config:
             "OCEANO_STATE_FILE",
             self.oceano_state_file,
         )
+        self.vu_socket = os.getenv("VU_SOCKET", self.vu_socket)
         self.external_artwork_enabled = _parse_bool_env(
             "EXTERNAL_ARTWORK_ENABLED",
             self.external_artwork_enabled,
@@ -192,7 +196,7 @@ class Config:
                 f"got '{self.layout_profile}'"
             )
 
-        valid_display_modes = ("rotate", "text", "artwork", "hybrid")
+        valid_display_modes = ("rotate", "text", "artwork", "hybrid", "vu")
         if self.display_mode not in valid_display_modes:
             raise ValueError(
                 f"display_mode must be one of {valid_display_modes}, "

@@ -1,3 +1,4 @@
+import math
 import os
 import textwrap
 import logging
@@ -506,6 +507,227 @@ class Renderer:
 
         art_resized = artwork_image.resize((self.art_size, self.art_size), Image.Resampling.LANCZOS)
         return art_resized, accent
+
+    # ------------------------------------------------------------------ #
+    # VU meter rendering                                                   #
+    # ------------------------------------------------------------------ #
+
+    # Gauge geometry — PIL angles: 0=east, clockwise.
+    # Arc spans from lower-left (215°) through top (270°) to lower-right (325°).
+    # dB range matches a classic VU meter: -20 VU to +3 VU.
+    _VU_ARC_START  = 215    # PIL °  →  -20 dB
+    _VU_ARC_END    = 325    # PIL °  →  +3 dB
+    _VU_DB_MIN     = -20.0
+    _VU_DB_MAX     =   3.0
+    _VU_ZONE_YEL   =  -7.0  # green → yellow boundary
+    _VU_ZONE_RED   =   0.0  # yellow → red boundary
+
+    @staticmethod
+    def _db_to_vu_angle(db: float) -> float:
+        """Map a dBFS value to a PIL gauge angle."""
+        t = (db - Renderer._VU_DB_MIN) / (Renderer._VU_DB_MAX - Renderer._VU_DB_MIN)
+        t = max(0.0, min(t, 1.0))
+        return Renderer._VU_ARC_START + t * (Renderer._VU_ARC_END - Renderer._VU_ARC_START)
+
+    @staticmethod
+    def _rms_to_db(rms: float) -> float:
+        """Convert linear RMS [0, 1] to dBFS, clamped to [DB_MIN, DB_MAX]."""
+        if rms < 1e-7:
+            return Renderer._VU_DB_MIN
+        return max(Renderer._VU_DB_MIN, min(20.0 * math.log10(rms), Renderer._VU_DB_MAX))
+
+    def render_vu(
+        self,
+        vu_left: float,
+        vu_right: float,
+        peak_left: float,
+        peak_right: float,
+        state: dict | None,
+    ) -> None:
+        """Render two analog needle VU meters inspired by the Magnat MR 780.
+
+        Layout (480×320):
+          - Two gauge cards (dark panel, amber outline) side by side, 254 px tall
+          - Footer strip (58 px): title + artist centred, source badge right
+          - Progress bar (8 px) at the very bottom in amber
+        """
+        if not self.fb_handle:
+            self._open_fb()
+
+        FOOTER_H = 58
+        PB_H = 8
+        GAUGE_H = self.height - FOOTER_H - PB_H   # 254 px
+        CARD_PAD = 8
+        CARD_W = (self.width - 3 * CARD_PAD) // 2  # 228 px
+        RADIUS = 108
+        PIVOT_Y = GAUGE_H - 18                      # 236
+
+        # Card x-boundaries
+        L_X1, L_X2 = CARD_PAD, CARD_PAD + CARD_W                          # 8 … 236
+        R_X1, R_X2 = self.width - CARD_PAD - CARD_W, self.width - CARD_PAD  # 244 … 472
+        LEFT_CX  = (L_X1 + L_X2) // 2   # 122
+        RIGHT_CX = (R_X1 + R_X2) // 2   # 358
+
+        img = Image.new("RGB", (self.width, self.height), (4, 4, 8))
+        draw = ImageDraw.Draw(img)
+
+        # Gauge card backgrounds
+        for x1, x2 in ((L_X1, L_X2), (R_X1, R_X2)):
+            draw.rounded_rectangle(
+                (x1, CARD_PAD, x2, GAUGE_H - CARD_PAD),
+                radius=14,
+                fill=(10, 10, 16),
+                outline=(58, 40, 8),
+                width=2,
+            )
+
+        # Gauges
+        for rms, peak, cx, ch in (
+            (vu_left,  peak_left,  LEFT_CX,  "L"),
+            (vu_right, peak_right, RIGHT_CX, "R"),
+        ):
+            self._draw_vu_gauge(draw, cx, PIVOT_Y, RADIUS, rms, peak, ch)
+
+        # Footer — title + artist
+        footer_y = GAUGE_H + 8
+        f_title  = self.get_font(20, bold=True)
+        f_artist = self.get_font(16)
+        f_source = self.get_font(13)
+
+        if state:
+            title  = state.get("title")  or ""
+            artist = state.get("artist") or ""
+            source = state.get("playback_source") or ""
+
+            if title and title != "Unknown":
+                t = textwrap.shorten(title, width=40, placeholder="…")
+                bx = draw.textbbox((0, 0), t, font=f_title)
+                tw = bx[2] - bx[0]
+                draw.text(((self.width - tw) // 2, footer_y),
+                          t, fill=(240, 240, 240), font=f_title)
+
+            if artist and artist != "Unknown":
+                a = textwrap.shorten(artist, width=48, placeholder="…")
+                bx = draw.textbbox((0, 0), a, font=f_artist)
+                aw = bx[2] - bx[0]
+                draw.text(((self.width - aw) // 2, footer_y + 26),
+                          a, fill=(145, 165, 185), font=f_artist)
+
+            if source:
+                bx = draw.textbbox((0, 0), source, font=f_source)
+                sw, sh = bx[2] - bx[0], bx[3] - bx[1]
+                sx, sy = self.width - sw - 16, footer_y + 8
+                draw.rectangle((sx - 5, sy - 3, sx + sw + 5, sy + sh + 3),
+                                outline=(80, 52, 10), width=1)
+                draw.text((sx, sy), source, fill=(155, 95, 25), font=f_source)
+
+        # Progress bar
+        seek     = (state or {}).get("seek", 0) or 0
+        duration = (state or {}).get("duration", 0) or 0
+        progress = min(seek / duration, 1.0) if duration > 0 else 0.0
+        pb_y = self.height - PB_H
+        draw.rectangle((0, pb_y, self.width, self.height), fill=(18, 10, 3))
+        if progress > 0:
+            draw.rectangle(
+                (0, pb_y, int(self.width * progress), self.height),
+                fill=(200, 100, 15),
+            )
+
+        self._write_to_fb(img)
+
+    def _draw_vu_gauge(
+        self,
+        draw: ImageDraw.ImageDraw,
+        cx: int,
+        cy: int,   # pivot Y
+        r: int,
+        rms: float,
+        peak: float,
+        label: str,
+    ) -> None:
+        """Draw one VU needle gauge.
+
+        The arc spans _VU_ARC_START → _VU_ARC_END (PIL clockwise degrees),
+        passing through the top (270°). The pivot is at (cx, cy).
+        """
+        bbox = [cx - r, cy - r, cx + r, cy + r]
+
+        # 1. Dim background arc (shows full scale even at silence)
+        draw.arc(bbox, self._VU_ARC_START, self._VU_ARC_END, fill=(28, 20, 6), width=12)
+
+        # 2. Coloured zone arcs
+        angle_yel = self._db_to_vu_angle(self._VU_ZONE_YEL)
+        angle_red = self._db_to_vu_angle(self._VU_ZONE_RED)
+        draw.arc(bbox, self._VU_ARC_START, angle_yel, fill=(0, 130, 45),  width=10)
+        draw.arc(bbox, angle_yel,          angle_red,  fill=(185, 135, 0), width=10)
+        draw.arc(bbox, angle_red,          self._VU_ARC_END, fill=(200, 30, 15), width=10)
+
+        # 3. Tick marks (drawn inward from the arc outer edge)
+        TICKS = {-20: True, -15: False, -10: True, -7: False,
+                 -5: False, -3: False, 0: True, 3: True}
+        LABELS = {-20, -10, 0, 3}
+        f_tick = self.get_font(11)
+
+        for db, major in TICKS.items():
+            ang = math.radians(self._db_to_vu_angle(db))
+            outer = r + 1
+            inner = r - (16 if major else 8)
+            ox, oy = cx + outer * math.cos(ang), cy + outer * math.sin(ang)
+            ix, iy = cx + inner * math.cos(ang), cy + inner * math.sin(ang)
+            draw.line([(ix, iy), (ox, oy)],
+                      fill=(210, 155, 45) if major else (95, 68, 18),
+                      width=2 if major else 1)
+
+            if db in LABELS:
+                lr = r - 30
+                lx = cx + lr * math.cos(ang)
+                ly = cy + lr * math.sin(ang)
+                txt = f"+{db}" if db > 0 else str(db)
+                draw.text((lx, ly), txt,
+                          fill=(165, 110, 28), font=f_tick, anchor="mm")
+
+        # 4. Peak-hold marker — bright line segment on the arc
+        if peak > 1e-6:
+            db_pk = self._rms_to_db(peak)
+            ang   = math.radians(self._db_to_vu_angle(db_pk))
+            o_x = cx + (r + 2)  * math.cos(ang)
+            o_y = cy + (r + 2)  * math.sin(ang)
+            i_x = cx + (r - 11) * math.cos(ang)
+            i_y = cy + (r - 11) * math.sin(ang)
+            draw.line([(i_x, i_y), (o_x, o_y)], fill=(255, 252, 200), width=3)
+
+        # 5. Needle
+        db_rms     = self._rms_to_db(rms)
+        needle_ang = math.radians(self._db_to_vu_angle(db_rms))
+        nlen       = r - 14
+        nx = cx + nlen * math.cos(needle_ang)
+        ny = cy + nlen * math.sin(needle_ang)
+
+        draw.line([(cx, cy), (nx + 1, ny + 1)], fill=(45, 25, 5), width=5)  # shadow
+        draw.line([(cx, cy), (nx, ny)],          fill=(255, 148, 8), width=3)  # needle
+
+        # 6. Pivot cap
+        draw.ellipse([cx - 8, cy - 8, cx + 8, cy + 8], fill=(48, 32, 6))
+        draw.ellipse([cx - 5, cy - 5, cx + 5, cy + 5], fill=(210, 130, 25))
+        draw.ellipse([cx - 2, cy - 2, cx + 2, cy + 2], fill=(255, 215, 90))
+
+        # 7. Channel label (L / R) — top-centre of the card area above the arc
+        f_lbl = self.get_font(18, bold=True)
+        arc_top_y = cy - r
+        lbl_y     = max(12, arc_top_y - 40)
+        bx        = draw.textbbox((0, 0), label, font=f_lbl)
+        draw.text((cx - (bx[2] - bx[0]) // 2, lbl_y),
+                  label, fill=(185, 105, 22), font=f_lbl)
+
+        # 8. Peak dB value — below channel label
+        if peak > 1e-6:
+            db_pk  = self._rms_to_db(peak)
+            db_txt = f"{db_pk:+.0f} dB" if db_pk >= 0 else f"{db_pk:.0f} dB"
+            f_db   = self.get_font(12)
+            bx     = draw.textbbox((0, 0), db_txt, font=f_db)
+            pk_col = (205, 45, 20) if db_pk >= 0 else (170, 120, 15) if db_pk >= -7 else (70, 135, 55)
+            draw.text((cx - (bx[2] - bx[0]) // 2, lbl_y + 24),
+                      db_txt, fill=pk_col, font=f_db)
 
     def _get_cached_art(self, cache_key, artwork_image, source="unknown"):
         """Cache resized artwork and accent color using a media-player-provided key."""
