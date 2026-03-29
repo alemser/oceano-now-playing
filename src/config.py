@@ -60,8 +60,9 @@ class Config:
     ui_preset: str = "high_contrast_rotate"
 
     # Metadata source
-    media_player_type: str = "oceano"
+    media_player_type: str = "auto"
     oceano_metadata_pipe: str = "/tmp/shairport-sync-metadata"
+    oceano_state_file: str = "/tmp/oceano-state.json"
     external_artwork_enabled: bool = True
 
     # Timing (seconds)
@@ -81,8 +82,9 @@ class Config:
         - UI_PRESET: combined style+mode preset (default: high_contrast_rotate)
         - LAYOUT_PROFILE: renderer layout profile (classic or high_contrast)
         - DISPLAY_MODE: rotate, text, artwork, or hybrid
-        - MEDIA_PLAYER: oceano (legacy values are coerced to oceano)
+        - MEDIA_PLAYER: auto, oceano, or state_file (default: auto)
         - OCEANO_METADATA_PIPE: shairport-sync metadata fifo path
+        - OCEANO_STATE_FILE: unified state file path (default: /tmp/oceano-state.json)
         - EXTERNAL_ARTWORK_ENABLED: enable external artwork fallback lookups (default: true)
         - CYCLE_TIME: text/artwork mode cycle in seconds (default: 30)
         - STANDBY_TIMEOUT: display sleep timeout in seconds (default: 600)
@@ -113,15 +115,19 @@ class Config:
         self.media_player_type = os.getenv(
             "MEDIA_PLAYER", self.media_player_type
         ).lower()
-        if self.media_player_type != "oceano":
+        if self.media_player_type not in ("auto", "oceano", "state_file"):
             logger.warning(
-                "Unsupported MEDIA_PLAYER '%s' in oceano-now-playing; forcing 'oceano'.",
+                "Unsupported MEDIA_PLAYER '%s'; falling back to 'auto'.",
                 self.media_player_type,
             )
-            self.media_player_type = "oceano"
+            self.media_player_type = "auto"
         self.oceano_metadata_pipe = os.getenv(
             "OCEANO_METADATA_PIPE",
             self.oceano_metadata_pipe,
+        )
+        self.oceano_state_file = os.getenv(
+            "OCEANO_STATE_FILE",
+            self.oceano_state_file,
         )
         self.external_artwork_enabled = _parse_bool_env(
             "EXTERNAL_ARTWORK_ENABLED",
@@ -163,7 +169,7 @@ class Config:
             )
 
         # Media player type
-        valid_players = ("oceano",)
+        valid_players = ("auto", "oceano", "state_file")
         if self.media_player_type not in valid_players:
             raise ValueError(
                 f"media_player_type must be one of {valid_players}, "
@@ -217,4 +223,7 @@ class Config:
             f"mode_cycle_time={self.mode_cycle_time}s, "
             f"external_artwork={'on' if self.external_artwork_enabled else 'off'}"
         )
-        logger.info(f"Oceano metadata pipe: {self.oceano_metadata_pipe}")
+        logger.info(
+            f"Oceano metadata pipe: {self.oceano_metadata_pipe}, "
+            f"state file: {self.oceano_state_file}"
+        )

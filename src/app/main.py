@@ -4,9 +4,12 @@ import signal
 import sys
 import logging
 
+import os
+
 from config import Config
 from media_players.base import MediaPlayer
 from media_players.oceano import OceanoClient
+from media_players.state_file import StateFileClient
 from renderer import Renderer
 
 # --- LOGGING CONFIGURATION ---
@@ -34,16 +37,26 @@ renderer = None
 player = None
 
 
-def detect_media_player(cfg: Config) -> OceanoClient:
-    """Instantiate the Oceano metadata client used by this fork."""
-    if cfg.media_player_type != 'oceano':
-        logger.warning(
-            "Unsupported MEDIA_PLAYER '%s' in oceano-now-playing; forcing oceano.",
-            cfg.media_player_type,
-        )
-        cfg.media_player_type = 'oceano'
+def detect_media_player(cfg: Config) -> MediaPlayer:
+    """Instantiate the media player client based on configuration.
 
-    logger.info(f"Using Oceano client at {cfg.oceano_metadata_pipe}")
+    - "state_file": always use StateFileClient (oceano-state-manager output)
+    - "oceano": always use OceanoClient (direct shairport-sync pipe)
+    - "auto": prefer StateFileClient when state file exists, else OceanoClient
+    """
+    use_state_file = (
+        cfg.media_player_type == "state_file"
+        or (cfg.media_player_type == "auto" and os.path.exists(cfg.oceano_state_file))
+    )
+
+    if use_state_file:
+        logger.info(f"Using StateFileClient at {cfg.oceano_state_file}")
+        return StateFileClient(
+            cfg.oceano_state_file,
+            external_artwork_enabled=cfg.external_artwork_enabled,
+        )
+
+    logger.info(f"Using OceanoClient at {cfg.oceano_metadata_pipe}")
     return OceanoClient(
         cfg.oceano_metadata_pipe,
         external_artwork_enabled=cfg.external_artwork_enabled,

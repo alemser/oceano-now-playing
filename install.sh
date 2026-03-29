@@ -1,9 +1,24 @@
 #!/bin/bash
 
 # Oceano Now Playing - Installation Script for Raspberry Pi 5
-set -e
+set -euo pipefail
 
-echo "--- Installing Oceano Now Playing ---"
+BRANCH="main"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --branch) BRANCH="${2:-}"; shift 2 ;;
+    *) echo "Unknown argument: $1"; exit 1 ;;
+  esac
+done
+
+echo "--- Installing Oceano Now Playing (branch: ${BRANCH}) ---"
+
+# 0. Pull latest code
+echo "Fetching latest code from branch ${BRANCH}..."
+git fetch origin
+git checkout "${BRANCH}"
+git reset --hard "origin/${BRANCH}"
 
 # 1. Update and Install System Dependencies
 echo "Installing system dependencies..."
@@ -36,6 +51,7 @@ cat <<EOF | sudo tee $SERVICE_PATH
 Description=Oceano Now Playing Display
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -45,7 +61,6 @@ StandardOutput=journal
 StandardError=journal
 Restart=always
 RestartSec=10
-StartLimitIntervalSec=0
 TimeoutStopSec=30
 User=${USER_NAME}
 Group=video
@@ -59,7 +74,7 @@ EOF
 echo "Reloading systemd and starting service..."
 sudo systemctl daemon-reload
 sudo systemctl enable oceano-now-playing.service
-sudo systemctl start oceano-now-playing.service
+sudo systemctl restart oceano-now-playing.service
 
 echo "--- Installation Complete! ---"
 echo "You can check the service status with: sudo systemctl status oceano-now-playing.service"
