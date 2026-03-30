@@ -17,10 +17,7 @@ UI_PRESETS = {
     "high_contrast_text": ("high_contrast", "text"),
     "high_contrast_artwork": ("high_contrast", "artwork"),
     "high_contrast_hybrid": ("high_contrast", "hybrid"),
-    "classic_rotate": ("classic", "rotate"),
-    "classic_text": ("classic", "text"),
-    "classic_artwork": ("classic", "artwork"),
-    "classic_hybrid": ("classic", "hybrid"),
+    "high_contrast_vu": ("high_contrast", "vu"),
 }
 
 
@@ -83,7 +80,7 @@ class Config:
         - FB_DEVICE: framebuffer device path (default: /dev/fb0)
         - COLOR_FORMAT: RGB565 or BGR565 (default: RGB565)
         - UI_PRESET: combined style+mode preset (default: high_contrast_rotate)
-        - LAYOUT_PROFILE: renderer layout profile (classic or high_contrast)
+        - LAYOUT_PROFILE: renderer layout profile (high_contrast recommended; classic kept for compatibility)
         - DISPLAY_MODE: rotate, text, artwork, hybrid, or vu
         - MEDIA_PLAYER: auto, oceano, or state_file (default: auto)
         - OCEANO_METADATA_PIPE: shairport-sync metadata fifo path

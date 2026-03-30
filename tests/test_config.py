@@ -63,11 +63,11 @@ def test_config_env_COLOR_FORMAT(monkeypatch):
 
 def test_config_env_UI_PRESET(monkeypatch):
     """Config maps UI_PRESET to layout profile and display mode."""
-    monkeypatch.setenv("UI_PRESET", "classic_artwork")
+    monkeypatch.setenv("UI_PRESET", "high_contrast_artwork")
     cfg = Config()
 
-    assert cfg.ui_preset == "classic_artwork"
-    assert cfg.layout_profile == "classic"
+    assert cfg.ui_preset == "high_contrast_artwork"
+    assert cfg.layout_profile == "high_contrast"
     assert cfg.display_mode == "artwork"
 
 
@@ -89,9 +89,9 @@ def test_config_env_UI_PRESET_invalid(monkeypatch):
 
 def test_config_env_LAYOUT_PROFILE(monkeypatch):
     """Config allows explicit LAYOUT_PROFILE override."""
-    monkeypatch.setenv("LAYOUT_PROFILE", "classic")
+    monkeypatch.setenv("LAYOUT_PROFILE", "high_contrast")
     cfg = Config()
-    assert cfg.layout_profile == "classic"
+    assert cfg.layout_profile == "high_contrast"
 
 
 def test_config_env_DISPLAY_MODE(monkeypatch):
@@ -103,11 +103,11 @@ def test_config_env_DISPLAY_MODE(monkeypatch):
 
 def test_config_display_mode_overrides_ui_preset(monkeypatch):
     """DISPLAY_MODE should override mode chosen by UI_PRESET."""
-    monkeypatch.setenv("UI_PRESET", "classic_artwork")
+    monkeypatch.setenv("UI_PRESET", "high_contrast_artwork")
     monkeypatch.setenv("DISPLAY_MODE", "text")
     cfg = Config()
 
-    assert cfg.layout_profile == "classic"
+    assert cfg.layout_profile == "high_contrast"
     assert cfg.display_mode == "text"
 
 
