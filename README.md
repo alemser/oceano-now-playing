@@ -95,43 +95,46 @@ This installs system dependencies, creates a Python virtual environment, and reg
 
 ## Configuration
 
-Set these via environment variables or inside the systemd service file. All values shown are defaults.
+Display settings are managed through the **Oceano Player web UI** at `http://<pi-ip>:8080` → **Display** section. Changes take effect immediately without editing any files.
 
-| Variable | Default | Description |
-|---|---|---|
-| `FB_DEVICE` | `/dev/fb0` | Framebuffer device path |
-| `COLOR_FORMAT` | `RGB565` | Pixel format; use `BGR565` if red/blue are swapped |
-| `UI_PRESET` | `high_contrast_rotate` | Layout preset (see below) |
-| `LAYOUT_PROFILE` | *(from preset)* | `high_contrast` or `classic` |
-| `DISPLAY_MODE` | *(from preset)* | `rotate`, `text`, `artwork`, `hybrid`, or `vu` |
-| `MEDIA_PLAYER` | `auto` | `auto`, `state_file`, or `oceano` (managed via web UI) |
-| `OCEANO_STATE_FILE` | `/tmp/oceano-state.json` | Unified state file from oceano-player |
-| `OCEANO_METADATA_PIPE` | `/tmp/shairport-sync-metadata` | shairport-sync FIFO (fallback) |
-| `VU_SOCKET` | `/tmp/oceano-vu.sock` | VU meter socket from oceano-source-detector |
-| `EXTERNAL_ARTWORK_ENABLED` | `true` | Fetch artwork from Cover Art Archive / iTunes / Deezer |
-| `CYCLE_TIME` | `30` | Seconds between text and artwork modes (rotate only) |
-| `STANDBY_TIMEOUT` | `600` | Seconds of silence before display sleeps |
+| Setting | Description |
+|---|---|
+| UI preset | Layout and display mode (`rotate`, `text`, `artwork`, `hybrid`, `vu`) |
+| Cycle time | Seconds between text and artwork in rotate mode |
+| Standby timeout | Seconds of silence before the display sleeps |
+| External artwork | Fetch album art from online providers |
 
-**UI presets** (`UI_PRESET`): `high_contrast_rotate`, `high_contrast_text`, `high_contrast_artwork`, `high_contrast_hybrid`, `high_contrast_vu`.
+### Display modes
 
-**`MEDIA_PLAYER=auto`** (default): uses `StateFileClient` when `/tmp/oceano-state.json`
-exists (oceano-player running), otherwise falls back to `OceanoClient` (shairport-sync
-pipe directly).
+| Mode | Description |
+|---|---|
+| `rotate` | Alternates between track info and artwork |
+| `text` | Track title, artist, album, progress bar |
+| `artwork` | Album art full screen |
+| `hybrid` | Artwork and text side by side |
+| `vu` | Analog-style VU meters (requires physical audio source via REC OUT) |
 
-### Switching display modes at runtime
+### Advanced: switching modes from the command line
 
-After installation, use the `oceano-mode` command — no need to edit config files:
+If the web UI is not available, use the `oceano-mode` command directly on the Pi:
 
 ```bash
-oceano-mode vu        # analog VU meters (requires oceano-source-detector)
+oceano-mode vu        # analog VU meters
 oceano-mode text      # track title / artist / album
 oceano-mode artwork   # album art full screen
 oceano-mode hybrid    # artwork + text side by side
-oceano-mode rotate    # alternates text and artwork every CYCLE_TIME seconds
+oceano-mode rotate    # alternates text and artwork
 oceano-mode status    # show current mode
 ```
 
-`oceano-mode` automatically uses `sudo` if needed and runs `daemon-reload` + `restart`.
+### Hardware-specific settings
+
+| Variable | Default | When to change |
+|---|---|---|
+| `FB_DEVICE` | `/dev/fb0` | If your framebuffer is at a different path |
+| `COLOR_FORMAT` | `RGB565` | Set to `BGR565` if red and blue are swapped on your display |
+
+These can be set in `/etc/oceano/display.env` if needed.
 
 ## Service Management
 
