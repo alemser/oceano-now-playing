@@ -28,8 +28,6 @@ This project uses `venv` (not `.venv`). If VS Code picks `.venv` by mistake, sel
 ```bash
 make test            # Run all tests (quiet)
 make test-verbose    # Run tests with detailed output
-make test-oceano     # OceanoClient tests only
-make test-state      # State machine tests only
 make test-renderer   # Renderer tests only
 make push            # Push to GitHub (pre-push hook runs tests)
 ```
@@ -55,23 +53,18 @@ Open a PR with a clear description and confirmation that `make test` passes.
 src/
 ├── app/
 │   └── main.py              # State machine and main loop
-├── artwork/
-│   └── providers.py         # External artwork lookup
 ├── media_players/
 │   ├── base.py              # MediaPlayer abstract interface
-│   └── oceano.py            # AirPlay metadata reader via shairport-sync FIFO
+│   └── state_file.py        # Unified state reader (/tmp/oceano-state.json)
 ├── config.py                # Configuration
 ├── renderer.py              # Framebuffer renderer
 └── oceano-now-playing.py    # Entrypoint
 
 tests/
 ├── conftest.py              # Shared fixtures
-├── test_oceano.py           # OceanoClient tests
-├── test_media_player.py     # MediaPlayer interface tests
-├── test_state_machine.py    # State transition tests
 ├── test_renderer.py         # Renderer utility tests
 ├── test_config.py           # Configuration tests
-└── test_artwork_providers.py
+└── test_vu_client.py        # VU ballistics tests
 ```
 
 ## Testing Guidelines

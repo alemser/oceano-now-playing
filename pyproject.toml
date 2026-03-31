@@ -36,8 +36,6 @@ dependencies = [
     "spidev>=3.5",
     "gpiozero>=2.0.0",
     "RPi.GPIO>=0.7.0",
-    # HTTP (artwork providers)
-    "requests>=2.31.0",
 ]
 
 [project.optional-dependencies]
@@ -60,7 +58,7 @@ Issues = "https://github.com/alemser/oceano-now-playing/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["app", "artwork", "media_players"]
+include = ["app", "media_players"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

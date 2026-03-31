@@ -3,20 +3,18 @@
 ## System Overview
 
 ```
-AirPlay source
-    │  (AirPlay protocol)
-    ▼
-shairport-sync
-    │  writes metadata items to FIFO
-    │  /tmp/shairport-sync-metadata
-    ▼
+oceano-player (backend)
+    │
+    ├── /tmp/oceano-state.json    ← track metadata, seek position, source, artwork path
+    └── /tmp/oceano-vu.sock       ← stereo RMS frames at ~22 fps
+              │
+              ▼
 ┌─────────────────────────────────────┐
-│  src/media_players/oceano.py        │
-│  OceanoClient                       │
-│  - Reads FIFO with select()         │
-│  - Decodes XML metadata items       │
-│  - Applies grace period for bursts  │
-│  - Resolves artwork via providers   │
+│  src/media_players/state_file.py    │
+│  StateFileClient                    │
+│  - Polls state file every 0.5s      │
+│  - Interpolates seek position       │
+│  - Loads artwork from file path     │
 └──────────────┬──────────────────────┘
                │  state dict
                ▼
@@ -24,7 +22,6 @@ shairport-sync
 │  src/app/main.py                    │
 │  State Machine + Event Loop         │
 │  - Detects state changes            │
-│  - Manages artwork resolution       │
 │  - Handles display sleep/wake       │
 │  - Controls text/artwork cycle      │
 └──────────────┬──────────────────────┘
@@ -47,29 +44,27 @@ shairport-sync
 
 ## Component Details
 
-### 1. Metadata Client (`media_players/oceano.py` → `OceanoClient`)
+### 1. Metadata Client (`media_players/state_file.py` → `StateFileClient`)
 
-**Responsibility**: Read and decode shairport-sync metadata, emit state dicts.
-
-**Protocol**: shairport-sync writes XML items to a FIFO, each with a 4-byte type, 4-byte code, and base64-encoded payload. `OceanoClient` parses these with a regex, accumulates them into an internal `_state` dict, and applies a short grace period (`TRACK_METADATA_GRACE_SECONDS = 0.8s`) before emitting a state update to allow burst items to settle.
+**Responsibility**: Poll `/tmp/oceano-state.json` and emit normalised state dicts.
 
 **Key state fields**:
 ```python
 {
-    'title': str,           # Track title
-    'artist': str,          # Artist name
-    'album': str,           # Album name
+    'title': str,               # Track title
+    'artist': str,              # Artist name
+    'album': str,               # Album name
     'status': 'play'|'stop',
-    'seek': int,            # Progress in ms (0 during sparse metadata periods)
-    'duration': int,        # Track length in ms
-    'samplerate': str,      # e.g. '44.1 kHz'
-    'bitdepth': str,        # e.g. '16 bit'
-    'playback_source': str, # 'AirPlay' | 'Bluetooth' | 'UPnP'
+    'seek': int,                # Progress in ms (interpolated from anchor)
+    'duration': int,            # Track length in ms
+    'samplerate': str,          # e.g. '44.1 kHz'
+    'bitdepth': str,            # e.g. '16 bit'
+    'playback_source': str,     # 'AirPlay' | 'Physical' | ''
     '_resolved_artwork': dict | None,
 }
 ```
 
-**Artwork resolution**: `OceanoClient.resolve_artwork()` (defined in `MediaPlayer` base) uses `artwork.providers.ArtworkLookup` to query Cover Art Archive, iTunes, and Deezer by artist+album. Result is cached in the state dict under `_resolved_artwork`.
+**Artwork**: Loaded from `track.artwork_path` in the state file (written by `oceano-state-manager`, which fetches from iTunes after ACRCloud recognition). No external provider lookups in this process.
 
 ### 2. State Machine (`app/main.py`)
 
@@ -77,7 +72,6 @@ shairport-sync
 
 **Key responsibilities**:
 - Detect new song, pause, resume, stop transitions.
-- Decide when to resolve artwork (`should_resolve_artwork()`).
 - Alternate between text mode and artwork mode on a `CYCLE_TIME` interval.
 - Sleep the display after `STANDBY_TIMEOUT` seconds of inactivity.
 - Interpolate seek position between metadata updates for smooth progress bars.
@@ -102,17 +96,17 @@ is_showing_idle: bool            # True when idle screen is visible
 - `artwork` — album art centred, progress bar overlay.
 - `hybrid` — artwork + text on one screen, no rotation.
 - `rotate` — alternates text ↔ artwork on `CYCLE_TIME` interval.
+- `vu` — analog-style VU meters + title/artist footer.
 
 **Framebuffer**: 480×320 pixels, RGB565 (2 bytes/pixel). Written directly with `mmap` or sequential seeks to `/dev/fb0`.
 
 ### 4. Configuration (`config.py` → `Config`)
 
-All runtime parameters are in `Config`, loaded from environment variables in `__post_init__`. Relevant settings:
+All runtime parameters are in `Config`, loaded from environment variables in `__post_init__`.
 
 | Field | Env var | Default |
 |---|---|---|
-| `oceano_metadata_pipe` | `OCEANO_METADATA_PIPE` | `/tmp/shairport-sync-metadata` |
-| `external_artwork_enabled` | `EXTERNAL_ARTWORK_ENABLED` | `True` |
+| `oceano_state_file` | `OCEANO_STATE_FILE` | `/tmp/oceano-state.json` |
 | `ui_preset` | `UI_PRESET` | `high_contrast_rotate` |
 | `mode_cycle_time` | `CYCLE_TIME` | `30` |
 | `standby_timeout` | `STANDBY_TIMEOUT` | `600` |
@@ -120,27 +114,24 @@ All runtime parameters are in `Config`, loaded from environment variables in `__
 ## Class Hierarchy
 
 ```
-MediaPlayer (ABC)          media_players/base.py
-    └── OceanoClient       media_players/oceano.py
+MediaPlayer (ABC)              media_players/base.py
+    └── StateFileClient        media_players/state_file.py
             ↓ used by
         app/main.py
             ↓ uses
         renderer.py
 ```
 
-`MediaPlayer` defines the interface (`connect`, `receive_message`, `is_connected`, `close`) and provides the shared `resolve_artwork` utility. `OceanoClient` is the only concrete implementation.
+`MediaPlayer` defines the interface (`connect`, `receive_message`, `is_connected`, `close`). `StateFileClient` is the only concrete implementation.
 
 ## Test Architecture
 
 ```
 tests/
-├── conftest.py              # Shared fixtures (oceano_state_*, mock_renderer)
-├── test_oceano.py           # OceanoClient: FIFO parsing, state emission, grace period
-├── test_media_player.py     # MediaPlayer ABC contract + detect_media_player factory
-├── test_state_machine.py    # State transitions, artwork policy, seek interpolation
+├── conftest.py              # Shared fixtures
 ├── test_renderer.py         # Rendering utilities, dominant colour, progress bar
 ├── test_config.py           # Config loading, env var overrides, validation
-└── test_artwork_providers.py
+└── test_vu_client.py        # VU ballistics tests
 ```
 
-Tests run entirely offline. `OceanoClient` is tested with a temporary FIFO (via `tmp_path`). `Renderer` is tested with a mock framebuffer file. No network or hardware access required.
+Tests run entirely offline. `Renderer` is tested with a mock framebuffer file. No network or hardware access required.
