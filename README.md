@@ -5,7 +5,11 @@ and real-time VU meters) on an SPI-connected display using the Linux framebuffer
 (`/dev/fb0`). Designed for Raspberry Pi 5 and integrated with
 [oceano-player](https://github.com/alemser/oceano-player).
 
-> Requires [Oceano Player](https://github.com/alemser/oceano-player) to be installed first.
+> Requires [Oceano Player](https://github.com/alemser/oceano-player) to be installed first:
+> ```bash
+> curl -fsSL -o install.sh https://raw.githubusercontent.com/alemser/oceano-player/main/install.sh
+> chmod +x install.sh && sudo ./install.sh
+> ```
 
 ## How it works
 
@@ -49,7 +53,7 @@ make test
 
 ## Installation
 
-> It requires [Oceano Player](https://github.com/alemser/oceano-player) to be installed first.
+> Oceano Player must be installed before this step (see above).
 
 
 ### 1. Enable SPI Display Framebuffer
@@ -100,7 +104,7 @@ Set these via environment variables or inside the systemd service file. All valu
 | `UI_PRESET` | `high_contrast_rotate` | Layout preset (see below) |
 | `LAYOUT_PROFILE` | *(from preset)* | `high_contrast` or `classic` |
 | `DISPLAY_MODE` | *(from preset)* | `rotate`, `text`, `artwork`, `hybrid`, or `vu` |
-| `MEDIA_PLAYER` | `auto` | `auto`, `state_file`, or `oceano` |
+| `MEDIA_PLAYER` | `auto` | `auto`, `state_file`, or `oceano` (managed via web UI) |
 | `OCEANO_STATE_FILE` | `/tmp/oceano-state.json` | Unified state file from oceano-player |
 | `OCEANO_METADATA_PIPE` | `/tmp/shairport-sync-metadata` | shairport-sync FIFO (fallback) |
 | `VU_SOCKET` | `/tmp/oceano-vu.sock` | VU meter socket from oceano-source-detector |
@@ -108,7 +112,7 @@ Set these via environment variables or inside the systemd service file. All valu
 | `CYCLE_TIME` | `30` | Seconds between text and artwork modes (rotate only) |
 | `STANDBY_TIMEOUT` | `600` | Seconds of silence before display sleeps |
 
-**UI presets** (`UI_PRESET`): `high_contrast_rotate`, `high_contrast_text`, `high_contrast_artwork`, `high_contrast_hybrid`, `classic_rotate`, `classic_text`, `classic_artwork`, `classic_hybrid`.
+**UI presets** (`UI_PRESET`): `high_contrast_rotate`, `high_contrast_text`, `high_contrast_artwork`, `high_contrast_hybrid`, `high_contrast_vu`.
 
 **`MEDIA_PLAYER=auto`** (default): uses `StateFileClient` when `/tmp/oceano-state.json`
 exists (oceano-player running), otherwise falls back to `OceanoClient` (shairport-sync
@@ -177,7 +181,8 @@ src/
 ├── media_players/
 │   ├── base.py              # MediaPlayer abstract base class
 │   ├── oceano.py            # AirPlay metadata reader via shairport-sync FIFO
-│   └── state_file.py        # Unified state reader (/tmp/oceano-state.json)
+│   ├── state_file.py        # Unified state reader (/tmp/oceano-state.json)
+│   └── sse_client.py        # Push-based state reader via SSE (oceano-state-manager :8081)
 ├── config.py                # Application configuration
 ├── renderer.py              # PIL → framebuffer renderer (text, artwork, hybrid, VU)
 ├── vu_client.py             # VU socket reader with attack/decay ballistics
