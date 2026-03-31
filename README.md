@@ -14,10 +14,10 @@ and real-time VU meters) on an SPI-connected display using the Linux framebuffer
 ## How it works
 
 `oceano-now-playing` reads unified playback state from `/tmp/oceano-state.json`
-(written by `oceano-state-manager`). When that file is not present it falls back
-to reading the `shairport-sync` metadata FIFO directly. It resolves album artwork,
-animates a progress bar, and can optionally display live analog-style VU meters
-driven by the real-time audio signal from `oceano-source-detector`.
+(written by `oceano-state-manager`). It renders track metadata and album artwork
+(provided by the state manager), animates a progress bar, and can optionally
+display live analog-style VU meters driven by the real-time audio signal from
+`oceano-source-detector`.
 
 ```
 oceano-player (backend)
@@ -49,7 +49,6 @@ make test
 - **Raspberry Pi 5** running Raspberry Pi OS.
 - **SPI display** configured and visible as `/dev/fb0`.
 - **[oceano-player](https://github.com/alemser/oceano-player)** installed and running (provides `/tmp/oceano-state.json` and `/tmp/oceano-vu.sock`).
-- Fallback: `shairport-sync` producing metadata at `/tmp/shairport-sync-metadata` (AirPlay only, no VU).
 
 ## Installation
 
@@ -68,21 +67,7 @@ dtoverlay=vc4-kms-v3d,no_display
 
 Verify after reboot: `ls /dev/fb0`
 
-### 2. Enable shairport-sync metadata pipe
-
-In `/etc/shairport-sync.conf`:
-
-```
-metadata = {
-    enabled = "yes";
-    include_cover_art = "yes";
-    pipe_name = "/tmp/shairport-sync-metadata";
-};
-```
-
-Restart shairport-sync: `sudo systemctl restart shairport-sync`
-
-### 3. Install oceano-now-playing
+### 2. Install oceano-now-playing
 
 ```bash
 git clone https://github.com/alemser/oceano-now-playing.git
@@ -102,7 +87,6 @@ Display settings are managed through the **Oceano Player web UI** at `http://<pi
 | UI preset | Layout and display mode (`rotate`, `text`, `artwork`, `hybrid`, `vu`) |
 | Cycle time | Seconds between text and artwork in rotate mode |
 | Standby timeout | Seconds of silence before the display sleeps |
-| External artwork | Fetch album art from online providers |
 
 ### Display modes
 
@@ -148,16 +132,13 @@ journalctl -u oceano-now-playing.service -f
 ## Updating
 
 ```bash
-./update.sh
+./install.sh
 ```
 
-Stops the service, pulls latest code, updates dependencies, and restarts. Rolls back automatically if the new version fails to start.
-
-To test a PR or branch on-device without moving `main`:
+To install a specific branch or PR on-device:
 
 ```bash
-./update-pr.sh 123
-./update-pr.sh feature/some-fix
+./install.sh --branch feature/some-fix
 ```
 
 ## Uninstallation
@@ -179,13 +160,9 @@ python src/oceano-now-playing.py
 src/
 ├── app/
 │   └── main.py              # State machine and main loop
-├── artwork/
-│   └── providers.py         # External artwork lookup (Cover Art Archive, iTunes, Deezer)
 ├── media_players/
 │   ├── base.py              # MediaPlayer abstract base class
-│   ├── oceano.py            # AirPlay metadata reader via shairport-sync FIFO
-│   ├── state_file.py        # Unified state reader (/tmp/oceano-state.json)
-│   └── sse_client.py        # Push-based state reader via SSE (oceano-state-manager :8081)
+│   └── state_file.py        # Unified state reader (/tmp/oceano-state.json)
 ├── config.py                # Application configuration
 ├── renderer.py              # PIL → framebuffer renderer (text, artwork, hybrid, VU)
 ├── vu_client.py             # VU socket reader with attack/decay ballistics
@@ -198,13 +175,9 @@ docs/
 
 tests/
 ├── conftest.py              # Shared fixtures
-├── test_oceano.py           # OceanoClient tests
-├── test_media_player.py     # MediaPlayer base class and factory tests
-├── test_state_machine.py    # State machine and transition tests
 ├── test_renderer.py         # Renderer utility tests
 ├── test_config.py           # Configuration tests
-├── test_vu_client.py        # VU ballistics tests
-└── test_artwork_providers.py
+└── test_vu_client.py        # VU ballistics tests
 ```
 
 ## Testing
@@ -212,7 +185,5 @@ tests/
 ```bash
 make test            # Run all tests (quiet)
 make test-verbose    # Full output
-make test-oceano     # Oceano client only
-make test-state      # State machine only
 make test-renderer   # Renderer only
 ```

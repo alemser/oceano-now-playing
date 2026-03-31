@@ -1,14 +1,11 @@
-.PHONY: test push test-push install-hooks help
+.PHONY: test push install-hooks help
 
 help:
 	@echo "Available commands:"
 	@echo "  make test          Run all tests"
 	@echo "  make test-verbose  Run tests with verbose output"
-	@echo "  make test-oceano   Run Oceano client tests only"
-	@echo "  make test-state    Run state machine tests only"
 	@echo "  make test-renderer Run renderer tests only"
 	@echo "  make push          Push to GitHub (tests run automatically via pre-push hook)"
-	@echo "  make test-push     Run tests, then push if all pass"
 	@echo "  make install-hooks Install git hooks (one-time setup)"
 
 test:
@@ -17,18 +14,8 @@ test:
 test-verbose:
 	python3 -m pytest tests/ -v
 
-test-oceano:
-	python3 -m pytest tests/test_oceano.py -v
-
-test-state:
-	python3 -m pytest tests/test_state_machine.py -v
-
 test-renderer:
 	python3 -m pytest tests/test_renderer.py -v
-
-test-push: test
-	@echo "✅ Tests passed. Pushing to GitHub..."
-	git push origin main
 
 push:
 	git push origin main

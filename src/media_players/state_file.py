@@ -44,13 +44,8 @@ POLL_INTERVAL = 0.5  # seconds between file stat checks
 class StateFileClient(MediaPlayer):
     """Read unified playback state from oceano-state-manager output file."""
 
-    def __init__(
-        self,
-        state_file: str,
-        external_artwork_enabled: bool = True,
-    ) -> None:
+    def __init__(self, state_file: str) -> None:
         self.state_file = state_file
-        self.external_artwork_enabled = external_artwork_enabled
 
         self._last_mtime: float | None = None
         self._last_updated_at: str | None = None

@@ -5,6 +5,3 @@ spidev>=3.5
 gpiozero>=2.0.0
 RPi.GPIO>=0.7.0
 
-# Volumio Communication
-requests>=2.31.0
-websocket-client>=1.6.0
