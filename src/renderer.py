@@ -1,5 +1,6 @@
 import math
 import os
+import re
 import textwrap
 import logging
 from dataclasses import dataclass
@@ -224,6 +225,184 @@ class Renderer:
         draw.text(((self.width - w) // 2, y), text, fill=fill, font=current_font)
         return y + (bbox[3] - bbox[1]) + 10
 
+    def _normalize_source_label(self, playback_source):
+        """Normalize source text for compact UI chips."""
+        source = str(playback_source or "").strip()
+        if not source:
+            return ""
+
+        source_lower = source.lower()
+        if source_lower == "physical":
+            return "VINYL"
+        return source.upper()
+
+    def _is_vinyl_source(self, playback_source):
+        """Heuristic to identify vinyl/phono sources from free-form input."""
+        source = str(playback_source or "").strip().lower()
+        if not source:
+            return False
+        return any(token in source for token in ("vinyl", "phono", "record", "lp", "physical"))
+
+    def _is_cd_source(self, playback_source):
+        """Heuristic to identify CD sources from free-form input."""
+        source = str(playback_source or "").strip().lower()
+        if not source:
+            return False
+        return any(token in source for token in ("cd", "compact disc", "compactdisc"))
+
+    def _coerce_track_number(self, value):
+        """Return a positive integer track number from loose input, or None."""
+        if value is None:
+            return None
+
+        if isinstance(value, int):
+            return value if value > 0 else None
+
+        value_str = str(value).strip()
+        if not value_str:
+            return None
+
+        match = re.search(r"(\d{1,3})", value_str)
+        if not match:
+            return None
+
+        track_number = int(match.group(1))
+        return track_number if track_number > 0 else None
+
+    def _parse_media_position(self, data):
+        """Parse side/track from structured or manual fields and return a UI label."""
+        if not data:
+            return ""
+
+        side_candidates = (
+            data.get("media_side"),
+            data.get("side"),
+            data.get("vinyl_side"),
+        )
+        track_candidates = (
+            data.get("media_track_number"),
+            data.get("track_number"),
+            data.get("track_no"),
+            data.get("vinyl_track"),
+        )
+        raw_candidates = (
+            data.get("media_position"),
+            data.get("media_position_label"),
+            data.get("vinyl_position"),
+            data.get("vinyl_position_raw"),
+            data.get("position"),
+        )
+
+        side = ""
+        for candidate in side_candidates:
+            candidate_str = str(candidate or "").strip().upper()
+            if candidate_str and re.match(r"^[A-Z]$", candidate_str):
+                side = candidate_str
+                break
+
+        track_number = None
+        for candidate in track_candidates:
+            track_number = self._coerce_track_number(candidate)
+            if track_number is not None:
+                break
+
+        if side and track_number is not None:
+            return f"Side {side} | Track {track_number}"
+        if side:
+            return f"Side {side}"
+        if track_number is not None:
+            return f"Track {track_number}"
+
+        for raw in raw_candidates:
+            raw_str = str(raw or "").strip()
+            if not raw_str:
+                continue
+
+            cleaned = re.sub(r"[^A-Za-z0-9]+", "", raw_str).upper()
+
+            # 1A, 12B
+            m_num_letter = re.match(r"^(\d{1,3})([A-Z])$", cleaned)
+            if m_num_letter:
+                return f"Side {m_num_letter.group(2)} | Track {int(m_num_letter.group(1))}"
+
+            # A1, B12
+            m_letter_num = re.match(r"^([A-Z])(\d{1,3})$", cleaned)
+            if m_letter_num:
+                return f"Side {m_letter_num.group(1)} | Track {int(m_letter_num.group(2))}"
+
+            m_side = re.search(r"(?:SIDE|LADO)\s*([A-Z])", raw_str, flags=re.IGNORECASE)
+            m_track = re.search(r"(?:TRACK|FAIXA)\s*(\d{1,3})", raw_str, flags=re.IGNORECASE)
+            if m_side and m_track:
+                return f"Side {m_side.group(1).upper()} | Track {int(m_track.group(1))}"
+            if m_track:
+                return f"Track {int(m_track.group(1))}"
+            if m_side:
+                return f"Side {m_side.group(1).upper()}"
+
+            # Final fallback: short sanitized manual input.
+            fallback = re.sub(r"\s+", " ", raw_str).strip()
+            if fallback:
+                return textwrap.shorten(fallback, width=20, placeholder="...")
+
+        return ""
+
+    def _build_info_chips(self, data):
+        """Build source/detail chips shown above the progress bar."""
+        samplerate = str(data.get("samplerate") or "").strip()
+        bitdepth = str(data.get("bitdepth") or "").strip()
+        playback_source = data.get("playback_source")
+
+        source_chip = self._normalize_source_label(playback_source)
+        position_chip = self._parse_media_position(data)
+        quality_chip = " | ".join([part for part in (samplerate, bitdepth) if part])
+
+        is_vinyl = self._is_vinyl_source(playback_source)
+        is_cd = self._is_cd_source(playback_source)
+
+        details_chip = ""
+        if is_vinyl or is_cd:
+            details_chip = position_chip or quality_chip
+        else:
+            details_chip = quality_chip or position_chip
+
+        chips = []
+        if source_chip:
+            chips.append(source_chip)
+        if details_chip:
+            chips.append(details_chip)
+        return chips
+
+    def _draw_centered_chips(self, draw, chips, box_y, font, outline_color, text_color, profile_name):
+        """Draw one or two centered info chips with fixed spacing."""
+        if not chips:
+            return
+
+        box_height = 36 if profile_name == "high_contrast" else 30
+        pad_x = 14 if profile_name == "high_contrast" else 10
+        gap = 10
+
+        chip_widths = []
+        for chip in chips:
+            cw, _ = draw.textbbox((0, 0), chip, font=font)[2:]
+            chip_widths.append(cw + 2 * pad_x)
+
+        total_width = sum(chip_widths) + (gap * (len(chip_widths) - 1))
+        x = (self.width - total_width) // 2
+
+        for idx, chip in enumerate(chips):
+            chip_w = chip_widths[idx]
+            draw.rectangle(
+                (x, box_y, x + chip_w, box_y + box_height),
+                fill=(0, 0, 0) if profile_name == "high_contrast" else None,
+                outline=outline_color,
+                width=3 if profile_name == "high_contrast" else 2,
+            )
+            tw, th = draw.textbbox((0, 0), chip, font=font)[2:]
+            text_x = x + (chip_w - tw) // 2
+            text_y = box_y + (box_height - th) // 2 - (1 if profile_name == "high_contrast" else 0)
+            draw.text((text_x, text_y), chip, fill=text_color, font=font)
+            x += chip_w + gap
+
     def render_idle_screen(self):
         """Renders a stylized grayscale logo for the idle/startup state."""
         img = Image.new('RGB', (self.width, self.height), color=(10, 10, 10))
@@ -421,9 +600,10 @@ class Renderer:
             album_text = textwrap.shorten(album, width=32, placeholder="...")
             draw.text((text_x, y_cursor), album_text, fill=profile.album_color, font=f_med)
 
-            quality_str = f"{samplerate} | {bitdepth}" if samplerate and bitdepth else samplerate or bitdepth
-            if quality_str:
-                quality_text = textwrap.shorten(quality_str, width=28, placeholder="...")
+            info_chips = self._build_info_chips(data)
+            if info_chips:
+                combined = " | ".join(info_chips[:2])
+                quality_text = textwrap.shorten(combined, width=28, placeholder="...")
                 qw, qh = draw.textbbox((0, 0), quality_text, font=f_tech)[2:]
                 box_y = pb_y - (qh + 20)
                 box_x1 = text_x
@@ -455,34 +635,21 @@ class Renderer:
             album_max_chars = 40 if profile.name == "high_contrast" else 45
             y_cursor = self._draw_centered_text(draw, album[:album_max_chars], y_cursor, f_med, profile.album_color)
             
-            # Tech Info at bottom center
-            quality_parts = []
-            if playback_source:
-                quality_parts.append(playback_source)
-            if samplerate:
-                quality_parts.append(samplerate)
-            if bitdepth:
-                quality_parts.append(bitdepth)
-            quality_str = " | ".join(quality_parts)
-            if quality_str:
-                qw, qh = draw.textbbox((0, 0), quality_str, font=f_tech)[2:]
-                if profile.name == "high_contrast":
-                    box_y = pb_y - 56
-                    draw.rectangle(
-                        ((self.width - qw) // 2 - 16, box_y, (self.width + qw) // 2 + 16, box_y + 36),
-                        fill=(0, 0, 0),
-                        outline=profile.quality_box_color,
-                        width=3,
-                    )
-                    draw.text(((self.width - qw) // 2, box_y + 5), quality_str, fill=profile.quality_text_color, font=f_tech)
-                else:
-                    box_y = pb_y - 50
-                    draw.rectangle(
-                        ((self.width - qw) // 2 - 10, box_y, (self.width + qw) // 2 + 10, box_y + 30),
-                        outline=accent_color,
-                        width=2,
-                    )
-                    draw.text(((self.width - qw) // 2, box_y + 3), quality_str, fill=accent_color, font=f_tech)
+            # Source and media-position chips at bottom center.
+            info_chips = self._build_info_chips(data)
+            if info_chips:
+                box_y = pb_y - 56 if profile.name == "high_contrast" else pb_y - 50
+                outline = profile.quality_box_color if profile.name == "high_contrast" else accent_color
+                text_color = profile.quality_text_color if profile.name == "high_contrast" else accent_color
+                self._draw_centered_chips(
+                    draw,
+                    info_chips[:2],
+                    box_y,
+                    f_tech,
+                    outline,
+                    text_color,
+                    profile.name,
+                )
 
         else:
             # --- MODE 2: COVER (CENTERED) ---

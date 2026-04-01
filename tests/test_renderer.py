@@ -402,3 +402,62 @@ class TestFontHandling:
         font = renderer.get_font(12)
         
         assert font is not None
+
+
+class TestMediaInfoFormatting:
+    """Test media source and position formatting helpers."""
+
+    def test_parse_media_position_vinyl_compact_format(self, mock_renderer):
+        renderer = mock_renderer
+        label = renderer._parse_media_position({'media_position': '1A'})
+        assert label == 'Side A | Track 1'
+
+    def test_parse_media_position_vinyl_reverse_compact_format(self, mock_renderer):
+        renderer = mock_renderer
+        label = renderer._parse_media_position({'media_position': 'B2'})
+        assert label == 'Side B | Track 2'
+
+    def test_parse_media_position_free_text_portuguese(self, mock_renderer):
+        renderer = mock_renderer
+        label = renderer._parse_media_position({'media_position': 'lado a faixa 3'})
+        assert label == 'Side A | Track 3'
+
+    def test_parse_media_position_structured_cd_track(self, mock_renderer):
+        renderer = mock_renderer
+        label = renderer._parse_media_position({'media_track_number': 7})
+        assert label == 'Track 7'
+
+    def test_build_info_chips_vinyl_prefers_position(self, mock_renderer):
+        renderer = mock_renderer
+        chips = renderer._build_info_chips(
+            {
+                'playback_source': 'vinyl',
+                'media_position': '1B',
+                'samplerate': '44.1 kHz',
+                'bitdepth': '16 bit',
+            }
+        )
+        assert chips == ['VINYL', 'Side B | Track 1']
+
+    def test_build_info_chips_cd_with_track(self, mock_renderer):
+        renderer = mock_renderer
+        chips = renderer._build_info_chips(
+            {
+                'playback_source': 'CD',
+                'media_track_number': '12',
+                'samplerate': '44.1 kHz',
+                'bitdepth': '16 bit',
+            }
+        )
+        assert chips == ['CD', 'Track 12']
+
+    def test_build_info_chips_digital_prefers_quality(self, mock_renderer):
+        renderer = mock_renderer
+        chips = renderer._build_info_chips(
+            {
+                'playback_source': 'AirPlay',
+                'samplerate': '44.1 kHz',
+                'bitdepth': '16 bit',
+            }
+        )
+        assert chips == ['AIRPLAY', '44.1 kHz | 16 bit']

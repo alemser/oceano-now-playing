@@ -146,6 +146,9 @@ class StateFileClient(MediaPlayer):
                 "samplerate": "",
                 "bitdepth": "",
                 "playback_source": source if source != "None" else "",
+                "media_side": "",
+                "media_track_number": "",
+                "media_position": "",
             }
             return state
 
@@ -170,6 +173,22 @@ class StateFileClient(MediaPlayer):
             "samplerate": track.get("samplerate") or "",
             "bitdepth": track.get("bitdepth") or "",
             "playback_source": source,
+            "media_side": track.get("media_side") or track.get("side") or track.get("vinyl_side") or "",
+            "media_track_number": (
+                track.get("media_track_number")
+                or track.get("track_number")
+                or track.get("track_no")
+                or track.get("vinyl_track")
+                or ""
+            ),
+            "media_position": (
+                track.get("media_position")
+                or track.get("media_position_label")
+                or track.get("vinyl_position")
+                or track.get("vinyl_position_raw")
+                or track.get("position")
+                or ""
+            ),
         }
 
         # Resolve artwork from file path provided by state manager.

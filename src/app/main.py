@@ -47,7 +47,19 @@ def states_are_equal(s1, s2):
     if s1 is None or s2 is None:
         return s1 == s2
 
-    keys = ['title', 'artist', 'album', 'status', 'samplerate', 'bitdepth', 'albumart', 'playback_source']
+    keys = [
+        'title',
+        'artist',
+        'album',
+        'status',
+        'samplerate',
+        'bitdepth',
+        'albumart',
+        'playback_source',
+        'media_side',
+        'media_track_number',
+        'media_position',
+    ]
     for key in keys:
         if s1.get(key) != s2.get(key):
             return False
