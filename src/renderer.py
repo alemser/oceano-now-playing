@@ -365,6 +365,9 @@ class Renderer:
         else:
             details_chip = quality_chip or position_chip
 
+        if is_vinyl and not details_chip:
+            details_chip = "Track ?"
+
         chips = []
         if source_chip:
             chips.append(source_chip)

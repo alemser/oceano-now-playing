@@ -451,6 +451,17 @@ class TestMediaInfoFormatting:
         )
         assert chips == ['CD', 'Track 12']
 
+    def test_build_info_chips_vinyl_without_position_uses_fallback(self, mock_renderer):
+        renderer = mock_renderer
+        chips = renderer._build_info_chips(
+            {
+                'playback_source': 'vinyl',
+                'samplerate': '',
+                'bitdepth': '',
+            }
+        )
+        assert chips == ['VINYL', 'Track ?']
+
     def test_build_info_chips_digital_prefers_quality(self, mock_renderer):
         renderer = mock_renderer
         chips = renderer._build_info_chips(
